@@ -190,6 +190,49 @@ validate_credentials() {
     return 0
 }
 
+# 5. Update the script
+update_script() {
+    echo "Checking for updates..."
+
+    # Navigate to the directory of the script
+    cd "$(dirname "$0")" || exit
+
+    # Fetch the latest changes from the remote repository
+    git fetch
+
+    # Check if the local version is behind the remote version
+    if [ "$(git rev-parse HEAD)" != "$(git rev-parse @{u})" ]; then
+        # If they're different, stop the service
+        echo "Stopping the Tado Assistant service..."
+        sudo systemctl stop tado-assistant.service
+
+        # Pull the latest changes
+        git pull
+        echo "Script updated successfully!"
+
+        # Recheck dependencies
+        install_dependencies
+
+        # Replace the service script with the updated version
+        echo "Updating the script used by the service..."
+        cp tado-assistant.sh /usr/local/bin/tado-assistant.sh
+        chmod +x /usr/local/bin/tado-assistant.sh
+
+        # Restart the service
+        echo "Starting the Tado Assistant service..."
+        sudo systemctl start tado-assistant.service
+    else
+        echo "You already have the latest version of the script."
+    fi
+}
+
+# Check if the script is run with the --update flag
+if [[ "$1" == "--update" ]]; then
+    # Call the update function
+    update_script
+    exit 0
+fi
+
 install_dependencies
 set_env_variables
 validate_credentials
