@@ -87,7 +87,7 @@ set_env_variables() {
 
     read -p "Enter TADO_USERNAME: " TADO_USERNAME
     read -p "Enter TADO_PASSWORD: " TADO_PASSWORD
-    read -p "Enter CHECKING_INTERVAL (default: 10): " CHECKING_INTERVAL
+    read -p "Enter CHECKING_INTERVAL (default: 15): " CHECKING_INTERVAL
     read -p "Enable log? (true/false, default: false): " ENABLE_LOG
     read -p "Enter log file path (default: /var/log/tado-assistant.log): " LOG_FILE
 
