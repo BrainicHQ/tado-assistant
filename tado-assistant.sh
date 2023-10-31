@@ -21,7 +21,7 @@ handle_curl_error() {
 
 # Login function
 login() {
-    local response
+    local response expires_in
 
     response=$(curl -s -X POST "https://auth.tado.com/oauth/token" \
         -d "client_id=public-api-preview&client_secret=4HJGRffVR8xb3XdEUQpjgZ1VplJi6Xgw&grant_type=password&password=$PASSWORD&scope=home.user&username=$USERNAME")
@@ -32,6 +32,9 @@ login() {
         log_message "Login error, check the username / password!"
         exit 1
     fi
+
+    expires_in=$(echo "$response" | jq -r '.expires_in')
+    EXPIRY_TIME=$(($(date +%s) + expires_in - 60))  # Subtracting 60 seconds as a buffer
 
     # Fetch the home ID
     HOME_DATA=$(curl -s -X GET "https://my.tado.com/api/v2/me" -H "Authorization: Bearer $TOKEN")
@@ -55,6 +58,12 @@ log_message() {
 
 homeState() {
     local home_state mobile_devices devices_home devices_str zones zone_id zone_name
+
+    current_time=$(date +%s)
+    if [ "$current_time" -ge $EXPIRY_TIME ]; then
+        login
+        EXPIRY_TIME=$(($(date +%s) + $expires_in - 60))
+    fi
 
     home_state=$(curl -s -X GET "https://my.tado.com/api/v2/homes/$HOME_ID/state" -H "Authorization: Bearer $TOKEN" | jq -r '.presence')
     handle_curl_error
