@@ -8,13 +8,14 @@ Enhance your Tado experience! Tado Assistant is a powerful utility that seamless
 -   **Smart Adjustments**: Detects discrepancies, such as no devices at home but the state is set to HOME, and adjusts accordingly.
 -   **Open Window Detection**: Recognizes open windows in different zones and activates the appropriate mode.
 
-## ⚠️ Disclaimer
+## ⚠️ **Disclaimer**
 
 This project is an independent initiative and is not affiliated, endorsed, or sponsored by Tado GmbH. All trademarks and logos mentioned are the property of their respective owners. Please use this software responsibly and at your own risk.
 
 ## 🛠 Prerequisites
 
 -   A Unix-based system (Linux distributions or macOS).
+- `git` installed to clone the repository.
 -   Root or sudo privileges for the installation script.
 -   `curl` and `jq` (Don't worry, our installer will help you set these up if they're not present).
 -   Ensure both scripts (`install.sh` and `tado-assistant.sh`) reside in the same directory.
@@ -52,7 +53,7 @@ Several environment variables drive the Tado Assistant:
 -   `ENABLE_LOG`: Toggle logging. Values: `true` or `false`. Default is `false`.
 -   `LOG_FILE`: Destination for the log file. Default is `/var/log/tado-assistant.log`.
 
-These variables are neatly stored in your shell's configuration file (e.g., `.bashrc` or `.zshrc`). Feel free to tweak them directly if needed.
+These variables are stored in `/etc/tado-assistant.env`. Feel free to tweak them directly if needed.
 
 ## 🔄 Usage
 
@@ -69,7 +70,7 @@ After successfully installing the Tado Assistant, it will run silently in the ba
     tail -f /var/log/tado-assistant.log
     ```
 
-4. **Environment Variables**: To tweak the behavior of Tado Assistant, adjust the environment variables in your shell's configuration file. After making changes, restart the service for them to take effect.
+4. **Environment Variables**: To tweak the behavior of Tado Assistant, adjust the environment variables in `/etc/tado-assistant.env`. After making changes, restart the service for them to take effect.
 
 Remember, Tado Assistant is designed to be hands-off. Once set up, it should require minimal interaction, letting you enjoy a comfortable home environment without any fuss.
 
@@ -90,7 +91,9 @@ Currently, a dedicated uninstallation script is not provided. To manually uninst
 
 3. Remove the main script: `sudo rm /usr/local/bin/tado-assistant.sh`
 
-4. Optionally, uninstall `curl` and `jq` if they were installed by the script and are no longer needed.
+4. Remove the environment variables file: `sudo rm /etc/tado-assistant.env`
+
+5. Optionally, uninstall `curl` and `jq` if they were installed by the script and are no longer needed.
 
 ## 🤝 Contributing
 
