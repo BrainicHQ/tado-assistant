@@ -6,21 +6,6 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
-# 1. Error Handling
-set -e
-
-# 2. Detect the default shell and its configuration file
-SHELL_CONFIG="$HOME/.bashrc"
-case $SHELL in
-    */zsh)
-        SHELL_CONFIG="$HOME/.zshrc"
-        ;;
-    */bash)
-        SHELL_CONFIG="$HOME/.bashrc"
-        ;;
-    # Add other shells as needed
-esac
-
 # 1. Install Dependencies
 install_dependencies() {
     echo "Installing dependencies..."
@@ -40,11 +25,18 @@ install_dependencies() {
             NEED_JQ=1
         fi
 
+        # Initialize the variables
+        NEED_CURL=0
+        NEED_JQ=0
+
         case $DISTRO in
             debian|ubuntu)
-                [[ $NEED_CURL ]] && sudo apt-get update && sudo apt-get install -y curl
-                [[ $NEED_JQ ]] && sudo apt-get update && sudo apt-get install -y jq
-                ;;
+                if [[ $NEED_CURL -eq 1 ]] || [[ $NEED_JQ -eq 1 ]]; then
+                            sudo apt-get update
+                        fi
+                        [[ $NEED_CURL -eq 1 ]] && sudo apt-get install -y curl
+                        [[ $NEED_JQ -eq 1 ]] && sudo apt-get install -y jq
+                        ;;
             fedora|centos|rhel)
                 [[ $NEED_CURL ]] && sudo yum install -y curl
                 [[ $NEED_JQ ]] && sudo yum install -y jq
@@ -83,20 +75,41 @@ install_dependencies() {
 
 # 2. Set Environment Variables
 set_env_variables() {
-    echo "Setting up environment variables..."
+    local max_attempts=3
+    local attempt=0
 
-    read -p "Enter TADO_USERNAME: " TADO_USERNAME
-    read -p "Enter TADO_PASSWORD: " TADO_PASSWORD
-    read -p "Enter CHECKING_INTERVAL (default: 15): " CHECKING_INTERVAL
-    read -p "Enable log? (true/false, default: false): " ENABLE_LOG
-    read -p "Enter log file path (default: /var/log/tado-assistant.log): " LOG_FILE
+    while (( attempt < max_attempts )); do
+        echo "Setting up environment variables..."
 
-    # Avoid duplicating entries
-    grep -q "TADO_USERNAME" "$SHELL_CONFIG" || echo "export TADO_USERNAME=$TADO_USERNAME" >> "$SHELL_CONFIG"
-    grep -q "TADO_PASSWORD" "$SHELL_CONFIG" || echo "export TADO_PASSWORD=$TADO_PASSWORD" >> "$SHELL_CONFIG"
-    grep -q "CHECKING_INTERVAL" "$SHELL_CONFIG" || echo "export CHECKING_INTERVAL=${CHECKING_INTERVAL:-10}" >> "$SHELL_CONFIG"
-    grep -q "ENABLE_LOG" "$SHELL_CONFIG" || echo "export ENABLE_LOG=${ENABLE_LOG:-false}" >> "$SHELL_CONFIG"
-    grep -q "LOG_FILE" "$SHELL_CONFIG" || echo "export LOG_FILE=${LOG_FILE:-/var/log/tado-assistant.log}" >> "$SHELL_CONFIG"
+        read -p "Enter TADO_USERNAME: " TADO_USERNAME
+        read -p "Enter TADO_PASSWORD: " TADO_PASSWORD
+        read -p "Enter CHECKING_INTERVAL (default: 15): " CHECKING_INTERVAL
+        read -p "Enable log? (true/false, default: false): " ENABLE_LOG
+        read -p "Enter log file path (default: /var/log/tado-assistant.log): " LOG_FILE
+
+        cat > /etc/tado-assistant.env <<EOL
+export TADO_USERNAME=$TADO_USERNAME
+export TADO_PASSWORD=$TADO_PASSWORD
+export CHECKING_INTERVAL=${CHECKING_INTERVAL:-10}
+export ENABLE_LOG=${ENABLE_LOG:-false}
+export LOG_FILE=${LOG_FILE:-/var/log/tado-assistant.log}
+EOL
+
+        # Validate the credentials
+        validate_credentials && break
+
+        (( attempt++ ))
+        if (( attempt < max_attempts )); then
+            echo "Please try again. ($((max_attempts - attempt)) attempts left)"
+        fi
+    done
+
+    if (( attempt == max_attempts )); then
+        echo "Maximum attempts reached. Exiting."
+        exit 1
+    fi
+
+    chmod 644 /etc/tado-assistant.env
 }
 
 # 3. Set up as Service
@@ -121,7 +134,7 @@ WantedBy=multi-user.target"
 
         echo "$SERVICE_CONTENT" | sudo tee /etc/systemd/system/tado-assistant.service > /dev/null
         sudo systemctl enable tado-assistant.service
-        sudo systemctl start tado-assistant.service
+        sudo systemctl restart tado-assistant.service
 
     elif [[ "$OSTYPE" == "darwin"* ]]; then
         LAUNCHD_CONTENT="<?xml version=\"1.0\" encoding=\"UTF-8\"?>
@@ -148,7 +161,37 @@ WantedBy=multi-user.target"
     fi
 }
 
+# 4. Validate credentials
+validate_credentials() {
+    local response
+    local error_message
+
+    response=$(curl -s -X POST "https://auth.tado.com/oauth/token" \
+        -d "client_id=public-api-preview" \
+        -d "client_secret=4HJGRffVR8xb3XdEUQpjgZ1VplJi6Xgw" \
+        -d "grant_type=password" \
+        -d "password=${TADO_PASSWORD}" \
+        -d "scope=home.user" \
+        -d "username=${TADO_USERNAME}")
+
+    # Check if curl command was successful
+    if [ $? -ne 0 ]; then
+        echo "Error connecting to the API."
+        return 1
+    fi
+
+    TOKEN=$(echo "$response" | jq -r '.access_token')
+    error_message=$(echo "$response" | jq -r '.error_description // empty')
+
+    if [ "$TOKEN" == "null" ] || [ -z "$TOKEN" ]; then
+        echo "Login error. ${error_message:-Check the username/password!}"
+        return 1
+    fi
+    return 0
+}
+
 install_dependencies
 set_env_variables
+validate_credentials
 setup_service
 echo "Tado Assistant has been successfully installed and started!"

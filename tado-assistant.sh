@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# Source the environment variables
+source /etc/tado-assistant.env
 # Load settings from environment variables
 USERNAME="${TADO_USERNAME}"
 PASSWORD="${TADO_PASSWORD}"
