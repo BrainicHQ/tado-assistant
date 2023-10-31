@@ -1,70 +1,82 @@
-# Tado Assistant
+# 🏡 Tado Assistant
 
-Tado Assistant is a utility that interfaces with the Tado API to monitor and adjust the state of a home based on the presence of mobile devices and the detection of open windows in different zones of the home. This repository contains two main scripts:
+Enhance your Tado experience! Tado Assistant is a powerful utility that seamlessly interfaces with the Tado API, allowing you to monitor and adjust your home's state based on mobile device presence and open window detection in different zones.
 
-1. `install.sh`: A script to set up the necessary dependencies and configure the environment.
-2. `tado-assistant.sh`: The main script that interacts with the Tado API.
+## 🚀 Features
 
-## Disclaimer
+-   **State Monitoring**: Continuously logs the state of your home (HOME or AWAY).
+-   **Smart Adjustments**: Detects discrepancies, such as no devices at home but the state is set to HOME, and adjusts accordingly.
+-   **Open Window Detection**: Recognizes open windows in different zones and activates the appropriate mode.
 
-**This project is an independent work and is not affiliated, endorsed, or sponsored by Tado GmbH. All trademarks, service marks, trade names, trade dress, product names, and logos appearing in this project are the property of their respective owners. Use this software at your own risk. The author(s) of this project are not responsible for any potential harm, damage, or unintended behavior caused by the use of this software.**
+## ⚠️ Disclaimer
 
-## Prerequisites
+This project is an independent initiative and is not affiliated, endorsed, or sponsored by Tado GmbH. All trademarks and logos mentioned are the property of their respective owners. Please use this software responsibly and at your own risk.
 
-- A Unix-based system (Linux distributions or macOS).
-- Root or sudo privileges for the installation script.
-- `curl` and `jq` (The installer will attempt to install these if they're not present).
-- Both scripts (`install.sh` and `tado-assistant.sh`) should be in the same directory.
+## 🛠 Prerequisites
 
-## Installation
+-   A Unix-based system (Linux distributions or macOS).
+-   Root or sudo privileges for the installation script.
+-   `curl` and `jq` (Don't worry, our installer will help you set these up if they're not present).
+-   Ensure both scripts (`install.sh` and `tado-assistant.sh`) reside in the same directory.
 
-1. Clone this repository or download the scripts to your local machine.
-   ```bash
-   git clone https://github.com/s1lviu/tado-assistant
-   cd tado-assistant
-   ```
+## 📥 Installation
 
-2. Make the installation script executable:
-   ```bash
-   chmod +x install.sh
-   ```
+1.  Clone this repository to dive in:
 
-3. Run the installation script with root or sudo privileges:
-   ```bash
-   sudo ./install.sh
-   ```
+    `git clone https://github.com/s1lviu/tado-assistant`
 
-   During the installation:
-    - The script will install necessary dependencies.
-    - You will be prompted to enter your Tado username, password, and other optional configurations.
-    - The main `tado-assistant.sh` script will be set up as a service.
+    `cd tado-assistant`
 
-## Usage
+2.  Grant the installation script the necessary permissions:
 
-Once installed, the Tado Assistant will run as a service in the background. It will continuously check the home state based on the presence of mobile devices and open windows in different zones.
+    `chmod +x install.sh`
 
-The service will:
-- Log the state of the home (HOME or AWAY).
-- Adjust the home state if it detects discrepancies (e.g., no devices at home but the state is HOME).
-- Detect open windows in different zones and activate the appropriate mode.
+3.  Kick off the installation with root or sudo privileges:
 
-## Configuration
+    `sudo ./install.sh`
 
-The installation script sets up several environment variables which the main script uses:
 
-- `TADO_USERNAME`: Your Tado account username.
-- `TADO_PASSWORD`: Your Tado account password.
-- `CHECKING_INTERVAL`: Interval (in seconds) at which the script checks the home state. Default is 10 seconds.
-- `ENABLE_LOG`: Whether to log messages to a file. Values: `true` or `false`. Default is `false`.
-- `LOG_FILE`: Path to the log file. Default is `/var/log/tado-assistant.log`.
+During the installation, the script will:
 
-These variables are saved in your shell's configuration file (e.g., `.bashrc` or `.zshrc`). You can modify them directly in the configuration file if needed.
+-   Set up the required dependencies.
+-   Prompt you for your Tado credentials and other optional configurations.
+-   Initialize `tado-assistant.sh` as a background service.
 
-## Logs
+## 🔧 Configuration
 
-If logging is enabled (`ENABLE_LOG=true`), you can check the log file (default location: `/var/log/tado-assistant.log`) for messages and updates from the Tado Assistant.
+Several environment variables drive the Tado Assistant:
 
-## Uninstallation
+-   `TADO_USERNAME`: Your Tado account username.
+-   `TADO_PASSWORD`: Your Tado account password.
+-   `CHECKING_INTERVAL`: Frequency (in seconds) for home state checks. Default is every 15 seconds.
+-   `ENABLE_LOG`: Toggle logging. Values: `true` or `false`. Default is `false`.
+-   `LOG_FILE`: Destination for the log file. Default is `/var/log/tado-assistant.log`.
+
+These variables are neatly stored in your shell's configuration file (e.g., `.bashrc` or `.zshrc`). Feel free to tweak them directly if needed.
+
+## 🔄 Usage
+
+After successfully installing the Tado Assistant, it will run silently in the background, ensuring your home's environment is always optimal. Here's how you can interact with it:
+
+1. **Checking Service Status**:
+   - **Linux**: `sudo systemctl status tado-assistant.service`
+   - **macOS**: `launchctl list | grep com.user.tadoassistant`
+
+2. **Manual Adjustments**: If you ever need to make manual adjustments to your Tado settings, simply use the Tado app. Tado Assistant will recognize these changes and adapt accordingly.
+
+3. **Logs**: To understand what Tado Assistant is doing behind the scenes, refer to the logs. If logging is enabled, you can tail the log file for real-time updates:
+    ```bash
+    tail -f /var/log/tado-assistant.log
+    ```
+
+4. **Environment Variables**: To tweak the behavior of Tado Assistant, adjust the environment variables in your shell's configuration file. After making changes, restart the service for them to take effect.
+
+Remember, Tado Assistant is designed to be hands-off. Once set up, it should require minimal interaction, letting you enjoy a comfortable home environment without any fuss.
+
+## 📜 Logs
+
+If you've enabled logging (`ENABLE_LOG=true`), you can peek into the log file (default location: `/var/log/tado-assistant.log`) for real-time updates and messages.
+## 🗑️ Uninstallation
 
 Currently, a dedicated uninstallation script is not provided. To manually uninstall:
 
@@ -80,6 +92,6 @@ Currently, a dedicated uninstallation script is not provided. To manually uninst
 
 4. Optionally, uninstall `curl` and `jq` if they were installed by the script and are no longer needed.
 
-## Contributing
+## 🤝 Contributing
 
-Contributions are welcome! Please ensure your contributions adhere to good coding practices and respect the project's goals. Submit pull requests or open issues if you have suggestions, improvements, or bug reports.
+Your insights can make Tado Assistant even better! We welcome contributions. Please ensure your code aligns with the project's ethos. Feel free to submit pull requests or open issues for suggestions, improvements, or bug reports.

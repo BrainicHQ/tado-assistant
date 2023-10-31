@@ -3,7 +3,7 @@
 # Load settings from environment variables
 USERNAME="${TADO_USERNAME}"
 PASSWORD="${TADO_PASSWORD}"
-CHECKING_INTERVAL="${CHECKING_INTERVAL:-10}"
+CHECKING_INTERVAL="${CHECKING_INTERVAL:-15}"
 ENABLE_LOG="${ENABLE_LOG:-false}"
 LOG_FILE="${LOG_FILE:-/tado-assistant.log}"
 
