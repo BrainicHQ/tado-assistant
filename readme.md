@@ -24,24 +24,49 @@ This project is an independent initiative and is not affiliated, endorsed, or sp
 
 1.  Clone this repository to dive in:
 
-    `git clone https://github.com/s1lviu/tado-assistant`
+    ```bash
+    git clone https://github.com/s1lviu/tado-assistant.git
+    ```
 
-    `cd tado-assistant`
+    ```bash
+    cd tado-assistant
+    ```
 
 2.  Grant the installation script the necessary permissions:
 
-    `chmod +x install.sh`
+    ```bash
+    chmod +x install.sh
+    ```
 
 3.  Kick off the installation with root or sudo privileges:
 
-    `sudo ./install.sh`
-
+    ```bash 
+    sudo ./install.sh
+    ```
 
 During the installation, the script will:
 
 -   Set up the required dependencies.
 -   Prompt you for your Tado credentials and other optional configurations.
 -   Initialize `tado-assistant.sh` as a background service.
+
+## 🔄 Updating
+
+To ensure you're running the latest version of Tado Assistant:
+
+1. Navigate to the `tado-assistant` directory:
+
+    ```bash
+    cd path/to/tado-assistant
+    ```
+
+2. Run the installation script with the `--update` flag:
+
+    ```bash
+    sudo ./install.sh --update
+    ```
+
+This will check for the latest version of the script, update any dependencies if necessary, and restart the service.
 
 ## 🔧 Configuration
 
@@ -60,8 +85,14 @@ These variables are stored in `/etc/tado-assistant.env`. Feel free to tweak them
 After successfully installing the Tado Assistant, it will run silently in the background, ensuring your home's environment is always optimal. Here's how you can interact with it:
 
 1. **Checking Service Status**:
-   - **Linux**: `sudo systemctl status tado-assistant.service`
-   - **macOS**: `launchctl list | grep com.user.tadoassistant`
+   - **Linux**: 
+   ```bash
+   sudo systemctl status tado-assistant.service
+    ``` 
+   - **macOS**:
+   ```bash
+   launchctl list | grep com.user.tadoassistant
+    ``` 
 
 2. **Manual Adjustments**: If you ever need to make manual adjustments to your Tado settings, simply use the Tado app. Tado Assistant will recognize these changes and adapt accordingly.
 
@@ -82,16 +113,34 @@ If you've enabled logging (`ENABLE_LOG=true`), you can peek into the log file (d
 Currently, a dedicated uninstallation script is not provided. To manually uninstall:
 
 1. Stop the service.
-    - For Linux: `sudo systemctl stop tado-assistant.service`
-    - For macOS: `launchctl unload ~/Library/LaunchAgents/com.user.tadoassistant.plist`
+    - For Linux:   
+   ```bash 
+   sudo systemctl stop tado-assistant.service
+    ```
+    - For macOS: 
+   ```bash 
+   launchctl unload ~/Library/LaunchAgents/com.user.tadoassistant.plist
+    ```
 
 2. Remove the service configuration.
-    - For Linux: `sudo rm /etc/systemd/system/tado-assistant.service`
-    - For macOS: `rm ~/Library/LaunchAgents/com.user.tadoassistant.plist`
+    - For Linux:
+   ```bash 
+   sudo rm /etc/systemd/system/tado-assistant.service
+    ```
+    - For macOS: 
+   ```bash 
+   rm ~/Library/LaunchAgents/com.user.tadoassistant.plist
+    ```
 
-3. Remove the main script: `sudo rm /usr/local/bin/tado-assistant.sh`
+3. Remove the main script: 
+   ```bash 
+   sudo rm /usr/local/bin/tado-assistant.sh
+    ```
 
-4. Remove the environment variables file: `sudo rm /etc/tado-assistant.env`
+4. Remove the environment variables file:
+   ```bash
+   sudo rm /etc/tado-assistant.env
+    ```
 
 5. Optionally, uninstall `curl` and `jq` if they were installed by the script and are no longer needed.
 
