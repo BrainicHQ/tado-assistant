@@ -90,7 +90,7 @@ set_env_variables() {
         cat > /etc/tado-assistant.env <<EOL
 export TADO_USERNAME=$TADO_USERNAME
 export TADO_PASSWORD=$TADO_PASSWORD
-export CHECKING_INTERVAL=${CHECKING_INTERVAL:-10}
+export CHECKING_INTERVAL=${CHECKING_INTERVAL:-15}
 export ENABLE_LOG=${ENABLE_LOG:-false}
 export LOG_FILE=${LOG_FILE:-/var/log/tado-assistant.log}
 EOL
