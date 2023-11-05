@@ -116,6 +116,17 @@ homeState() {
     echo "$zones" | jq -c '.[]' | while read -r zone; do
         zone_id=$(echo "$zone" | jq -r '.id')
         zone_name=$(echo "$zone" | jq -r '.name')
+
+        open_window_detection_supported=$(echo "$zone" | jq -r '.openWindowDetection.supported')
+        if [ "$open_window_detection_supported" = false ]; then
+            continue
+        fi
+
+        open_window_detection_enabled=$(echo "$zone" | jq -r '.openWindowDetection.enabled')
+        if [ "$open_window_detection_enabled" = false ]; then
+            continue
+        fi
+
         open_window_detected=$(curl -s -X GET "https://my.tado.com/api/v2/homes/$HOME_ID/zones/$zone_id/state" -H "Authorization: Bearer $TOKEN" | jq -r '.openWindowDetected')
         handle_curl_error
 
