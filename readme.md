@@ -166,7 +166,7 @@ project's ethos. Feel free to submit pull requests or open issues for suggestion
 
 ## 🍕 Support
 
-Love Tado Assistant? You can show your support by buying me a coffee! All contributions are greatly appreciated and help
+Love Tado Assistant? You can show your support by buying me a pizza! All contributions are greatly appreciated and help
 keep the project running. [Buy Me a Pizza](https://www.buymeacoffee.com/silvius)
 
 Alternatively, contributions to the codebase or documentation are also welcome. Every bit of help counts!
