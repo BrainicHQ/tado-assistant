@@ -118,6 +118,38 @@ environment is always optimal. Here's how you can interact with it:
 Remember, Tado Assistant is designed to be hands-off. Once set up, it should require minimal interaction, letting you
 enjoy a comfortable home environment without any fuss.
 
+## 🌟 Running Tado Assistant Continuously
+
+Ensuring Tado Assistant runs continuously is crucial for maintaining an optimal home environment. Here are some cost-effective solutions for running the software 24/7, suitable for both technical and non-technical users.
+
+### ☁️ Free Tier Cloud Services
+
+Cloud services offer reliable and free solutions to run small-scale projects like Tado Assistant. Here are some popular options:
+
+#### AWS EC2
+- **Amazon Web Services (AWS)** provides a free tier EC2 instance which is more than capable of handling small applications.
+- [AWS EC2 Free Tier Guide](https://aws.amazon.com/free/)
+
+#### Google Cloud Platform
+- **Google Cloud Platform (GCP)** offers a free tier with a micro VM instance.
+- [GCP Free Tier Guide](https://cloud.google.com/free/docs/free-cloud-features)
+
+#### Microsoft Azure
+- **Microsoft Azure** also provides a free tier with virtual machines.
+- [Azure Free Tier Guide](https://azure.microsoft.com/en-us/free/)
+
+### 🖥️ Raspberry Pi or Old Laptop/PC
+
+For those who prefer a more hands-on approach or wish to utilize existing hardware:
+
+#### Raspberry Pi
+- A **Raspberry Pi** can be a cost-effective and energy-efficient server.
+- [Setting up Tado Assistant on Raspberry Pi](https://www.raspberrypi.com/documentation/computers/getting-started.html)
+
+#### Repurposed Old Laptop/PC
+- Use an **old laptop or PC** as a dedicated server for Tado Assistant.
+- Ensure it's configured to run the software on startup and adjust power settings for continuous operation.
+
 ## 📜 Logs
 
 If you've enabled logging (`ENABLE_LOG=true`), you can peek into the log file (default
