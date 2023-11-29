@@ -120,21 +120,27 @@ enjoy a comfortable home environment without any fuss.
 
 ## 🌟 Running Tado Assistant Continuously
 
-Ensuring Tado Assistant runs continuously is crucial for maintaining an optimal home environment. Here are some cost-effective solutions for running the software 24/7, suitable for both technical and non-technical users.
+Ensuring Tado Assistant runs continuously is crucial for maintaining an optimal home environment. Here are some
+cost-effective solutions for running the software 24/7, suitable for both technical and non-technical users.
 
 ### ☁️ Free Tier Cloud Services
 
-Cloud services offer reliable and free solutions to run small-scale projects like Tado Assistant. Here are some popular options:
+Cloud services offer reliable and free solutions to run small-scale projects like Tado Assistant. Here are some popular
+options:
 
 #### AWS EC2
-- **Amazon Web Services (AWS)** provides a free tier EC2 instance which is more than capable of handling small applications.
+
+- **Amazon Web Services (AWS)** provides a free tier EC2 instance which is more than capable of handling small
+  applications.
 - [AWS EC2 Free Tier Guide](https://aws.amazon.com/free/)
 
 #### Google Cloud Platform
+
 - **Google Cloud Platform (GCP)** offers a free tier with a micro VM instance.
 - [GCP Free Tier Guide](https://cloud.google.com/free/docs/free-cloud-features)
 
 #### Microsoft Azure
+
 - **Microsoft Azure** also provides a free tier with virtual machines.
 - [Azure Free Tier Guide](https://azure.microsoft.com/en-us/free/)
 
@@ -143,10 +149,12 @@ Cloud services offer reliable and free solutions to run small-scale projects lik
 For those who prefer a more hands-on approach or wish to utilize existing hardware:
 
 #### Raspberry Pi
+
 - A **Raspberry Pi** can be a cost-effective and energy-efficient server.
 - [Setting up Tado Assistant on Raspberry Pi](https://www.raspberrypi.com/documentation/computers/getting-started.html)
 
 #### Repurposed Old Laptop/PC
+
 - Use an **old laptop or PC** as a dedicated server for Tado Assistant.
 - Ensure it's configured to run the software on startup and adjust power settings for continuous operation.
 
@@ -198,7 +206,8 @@ project's ethos. Feel free to submit pull requests or open issues for suggestion
 
 ## 🍕 Support
 
-Love Tado Assistant? You can show your support by buying me a pizza! All contributions are greatly appreciated and help
-keep the project running. [Buy Me a Pizza](https://www.buymeacoffee.com/silvius)
+Love Tado Assistant? You can show your support by starring the repository, sharing it with others,
+or [buying me a pizza](https://www.buymeacoffee.com/silviu). All contributions are greatly appreciated and help keep the
+project running.
 
 Alternatively, contributions to the codebase or documentation are also welcome. Every bit of help counts!
