@@ -10,6 +10,29 @@ ENABLE_LOG="${ENABLE_LOG:-false}"
 LOG_FILE="${LOG_FILE:-/tado-assistant.log}"
 
 declare -A OPEN_WINDOW_ACTIVATION_TIMES
+LAST_MESSAGE="" # Used to prevent duplicate messages
+
+# Reset the log file if it's older than 10 days
+reset_log_if_needed() {
+    local max_age_days=10  # Max age in days (e.g., 10 days)
+    local current_time
+    local last_modified
+    local age_days
+    local timestamp
+    local backup_log
+
+    current_time=$(date +%s)
+    last_modified=$(date -r "$LOG_FILE" +%s)
+    age_days=$(( (current_time - last_modified) / 86400 ))
+
+    if [ "$age_days" -ge "$max_age_days" ]; then
+        timestamp=$(date '+%Y%m%d%H%M%S')
+        backup_log="${LOG_FILE}.${timestamp}"
+        mv "$LOG_FILE" "$backup_log"
+        touch "$LOG_FILE"
+        echo "Log reset: $backup_log"
+    fi
+}
 
 # Error handling for curl
 handle_curl_error() {
@@ -51,11 +74,12 @@ login() {
 
 log_message() {
     local message="$1"
+    reset_log_if_needed
     if [ "$ENABLE_LOG" = true ] && [ "$LAST_MESSAGE" != "$message" ]; then
         echo "$(date '+%d-%m-%Y %H:%M:%S') # $message" >> "$LOG_FILE"
+        LAST_MESSAGE="$message"
     fi
     echo "$(date '+%d-%m-%Y %H:%M:%S') # $message"
-    LAST_MESSAGE="$message"
 }
 
 homeState() {
