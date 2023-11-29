@@ -10,6 +10,10 @@ fi
 install_dependencies() {
     echo "Installing dependencies..."
 
+    # Initialize the variables
+    NEED_CURL=0
+    NEED_JQ=0
+
     if [[ "$OSTYPE" == "linux-gnu"* ]]; then
         # Detecting the distribution
         if [ -f /etc/os-release ]; then
@@ -25,18 +29,14 @@ install_dependencies() {
             NEED_JQ=1
         fi
 
-        # Initialize the variables
-        NEED_CURL=0
-        NEED_JQ=0
-
         case $DISTRO in
             debian|ubuntu)
                 if [[ $NEED_CURL -eq 1 ]] || [[ $NEED_JQ -eq 1 ]]; then
-                            sudo apt-get update
-                        fi
-                        [[ $NEED_CURL -eq 1 ]] && sudo apt-get install -y curl
-                        [[ $NEED_JQ -eq 1 ]] && sudo apt-get install -y jq
-                        ;;
+                    sudo apt-get update
+                fi
+                [[ $NEED_CURL -eq 1 ]] && sudo apt-get install -y curl
+                [[ $NEED_JQ -eq 1 ]] && sudo apt-get install -y jq
+                ;;
             fedora|centos|rhel)
                 [[ $NEED_CURL ]] && sudo yum install -y curl
                 [[ $NEED_JQ ]] && sudo yum install -y jq
@@ -84,6 +84,12 @@ set_env_variables() {
         read -p "Enter TADO_USERNAME: " TADO_USERNAME
         read -p "Enter TADO_PASSWORD: " TADO_PASSWORD
         read -p "Enter CHECKING_INTERVAL (default: 15): " CHECKING_INTERVAL
+
+        echo "Enter the maximum duration for the 'Open Window' feature in seconds."
+        echo "This setting defines how long the system should wait before resuming normal operation after an open window is detected."
+        echo "Leave this field empty to use the default duration set in the Tado app."
+        read -p "Enter MAX_OPEN_WINDOW_DURATION (in seconds): " MAX_OPEN_WINDOW_DURATION
+
         read -p "Enable log? (true/false, default: false): " ENABLE_LOG
         read -p "Enter log file path (default: /var/log/tado-assistant.log): " LOG_FILE
 
@@ -91,6 +97,7 @@ set_env_variables() {
 export TADO_USERNAME=$TADO_USERNAME
 export TADO_PASSWORD=$TADO_PASSWORD
 export CHECKING_INTERVAL=${CHECKING_INTERVAL:-15}
+${MAX_OPEN_WINDOW_DURATION:+export MAX_OPEN_WINDOW_DURATION=$MAX_OPEN_WINDOW_DURATION}
 export ENABLE_LOG=${ENABLE_LOG:-false}
 export LOG_FILE=${LOG_FILE:-/var/log/tado-assistant.log}
 EOL
@@ -197,17 +204,31 @@ update_script() {
     # Navigate to the directory of the script
     cd "$(dirname "$0")" || exit
 
+    # Check for local changes
+    if [[ $(git status --porcelain) ]]; then
+        echo "Local changes detected. Creating a backup..."
+        git diff > "backup-$(date +%Y%m%d%H%M%S).patch"
+    fi
+
     # Fetch the latest changes from the remote repository
     git fetch
 
-    # Check if the local version is behind the remote version
-    if [ "$(git rev-parse HEAD)" != "$(git rev-parse @{u})" ]; then
-        # If they're different, stop the service
+    local force_update=0
+    if [[ "$1" == "--force" ]]; then
+        force_update=1
+    fi
+
+    # Check if the local version is behind the remote version or force update is requested
+    if [[ "$(git rev-parse HEAD)" != "$(git rev-parse '@{u}')" ]] || [[ $force_update -eq 1 ]]; then
+        # If they're different or force update is requested, stop the service
         echo "Stopping the Tado Assistant service..."
         sudo systemctl stop tado-assistant.service
 
         # Pull the latest changes
-        git pull
+        git pull --rebase || {
+            echo "Error: Update failed. Please resolve conflicts manually."
+            exit 1
+        }
         echo "Script updated successfully!"
 
         # Recheck dependencies
@@ -225,6 +246,13 @@ update_script() {
         echo "You already have the latest version of the script."
     fi
 }
+
+# Check if the script is run with the --update or --force-update flag
+if [[ "$1" == "--update" ]] || [[ "$1" == "--force-update" ]]; then
+    # Call the update function with or without force option
+    update_script "$1"
+    exit 0
+fi
 
 # Check if the script is run with the --update flag
 if [[ "$1" == "--update" ]]; then

@@ -9,6 +9,8 @@ CHECKING_INTERVAL="${CHECKING_INTERVAL:-15}"
 ENABLE_LOG="${ENABLE_LOG:-false}"
 LOG_FILE="${LOG_FILE:-/tado-assistant.log}"
 
+declare -A OPEN_WINDOW_ACTIVATION_TIMES
+
 # Error handling for curl
 handle_curl_error() {
     if [ $? -ne 0 ]; then
@@ -71,7 +73,7 @@ homeState() {
     mobile_devices=$(curl -s -X GET "https://my.tado.com/api/v2/homes/$HOME_ID/mobileDevices" -H "Authorization: Bearer $TOKEN")
     handle_curl_error
 
-    devices_home=($(echo "$mobile_devices" | jq -r '.[] | select(.settings.geoTrackingEnabled == true and .location.atHome == true) | .name'))
+    mapfile -t devices_home < <(echo "$mobile_devices" | jq -r '.[] | select(.settings.geoTrackingEnabled == true and .location.atHome == true) | .name')
     handle_curl_error
 
     if [ ${#devices_home[@]} -gt 0 ] && [ "$home_state" == "HOME" ]; then
@@ -112,34 +114,55 @@ homeState() {
     zones=$(curl -s -X GET "https://my.tado.com/api/v2/homes/$HOME_ID/zones" -H "Authorization: Bearer $TOKEN")
     handle_curl_error
 
-    # Check each zone for open windows
-    echo "$zones" | jq -c '.[]' | while read -r zone; do
-        zone_id=$(echo "$zone" | jq -r '.id')
-        zone_name=$(echo "$zone" | jq -r '.name')
+# Check each zone for open windows
+echo "$zones" | jq -c '.[]' | while read -r zone; do
+    zone_id=$(echo "$zone" | jq -r '.id')
+    zone_name=$(echo "$zone" | jq -r '.name')
 
-        open_window_detection_supported=$(echo "$zone" | jq -r '.openWindowDetection.supported')
-        if [ "$open_window_detection_supported" = false ]; then
-            continue
-        fi
+    open_window_detection_supported=$(echo "$zone" | jq -r '.openWindowDetection.supported')
+    if [ "$open_window_detection_supported" = false ]; then
+        continue
+    fi
 
-        open_window_detection_enabled=$(echo "$zone" | jq -r '.openWindowDetection.enabled')
-        if [ "$open_window_detection_enabled" = false ]; then
-            continue
-        fi
+    open_window_detection_enabled=$(echo "$zone" | jq -r '.openWindowDetection.enabled')
+    if [ "$open_window_detection_enabled" = false ]; then
+        continue
+    fi
 
-        open_window_detected=$(curl -s -X GET "https://my.tado.com/api/v2/homes/$HOME_ID/zones/$zone_id/state" -H "Authorization: Bearer $TOKEN" | jq -r '.openWindowDetected')
-        handle_curl_error
+    open_window_detected=$(curl -s -X GET "https://my.tado.com/api/v2/homes/$HOME_ID/zones/$zone_id/state" -H "Authorization: Bearer $TOKEN" | jq -r '.openWindowDetected')
+    handle_curl_error
 
-        if [ "$open_window_detected" == "true" ]; then
-            log_message "$zone_name: open window detected, activating the OpenWindow mode."
-            # Set open window mode for the zone
-            curl -s -X POST "https://my.tado.com/api/v2/homes/$HOME_ID/zones/$zone_id/state/openWindow/activate" \
-                -H "Authorization: Bearer $TOKEN"
+    if [ "$open_window_detected" == "true" ]; then
+        current_time=$(date +%s)
+
+        # Check if the open window mode was recently activated and MAX_OPEN_WINDOW_DURATION is set
+        if [ -n "${OPEN_WINDOW_ACTIVATION_TIMES[$zone_id]}" ] && [ -n "$MAX_OPEN_WINDOW_DURATION" ]; then
+            activation_time=${OPEN_WINDOW_ACTIVATION_TIMES[$zone_id]}
+            time_diff=$((current_time - activation_time))
+
+            if [ "$time_diff" -gt "$MAX_OPEN_WINDOW_DURATION" ]; then
+                log_message "$zone_name: Open window detected and activated for more than $MAX_OPEN_WINDOW_DURATION seconds. Cancelling open window mode."
+                # Cancel open window mode for the zone
+                curl -s -X DELETE "https://my.tado.com/api/v2/homes/$HOME_ID/zones/$zone_id/state/openWindow" \
+                    -H "Authorization: Bearer $TOKEN"
                 handle_curl_error
-
-            log_message "Activating open window mode for $zone_name."
+                log_message "Cancelled open window mode for $zone_name."
+                unset "OPEN_WINDOW_ACTIVATION_TIMES[$zone_id]"
+                continue
+            fi
         fi
-    done
+
+        log_message "$zone_name: open window detected, activating the OpenWindow mode."
+        # Set open window mode for the zone
+        curl -s -X POST "https://my.tado.com/api/v2/homes/$HOME_ID/zones/$zone_id/state/openWindow/activate" \
+            -H "Authorization: Bearer $TOKEN"
+        handle_curl_error
+        log_message "Activating open window mode for $zone_name."
+
+        # Record the activation time
+        OPEN_WINDOW_ACTIVATION_TIMES[$zone_id]=$current_time
+    fi
+done
 
     log_message "Waiting for a change in devices location or for an open window.."
 }

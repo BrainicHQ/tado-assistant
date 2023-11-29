@@ -2,7 +2,8 @@
 
 Discover the ultimate free alternative to Tado's Auto-Assist with Tado Assistant! This innovative utility enhances your
 Tado smart home experience by seamlessly integrating with the Tado API, offering advanced features like mobile
-device-based home state monitoring and open window detection in various zones. Ideal for those in search of a "Tado Auto
+device-based home state monitoring, open window detection in various zones, and customizable settings for open window
+duration. Ideal for those in search of a "Tado Auto
 Assist free" solution, Tado Assistant provides an efficient and cost-effective way to automate and optimize your home
 environment. It's designed to be user-friendly and accessible, requiring minimal dependencies, making it a perfect
 choice for both technical and non-technical users.
@@ -14,6 +15,8 @@ choice for both technical and non-technical users.
 - **Smart Adjustments**: Detects discrepancies, such as no devices at home but the state is set to HOME, and adjusts
   accordingly.
 - **Open Window Detection**: Recognizes open windows in different zones and activates the appropriate mode.
+- **Customizable Open Window Duration**: Set your preferred duration for the 'Open Window' detection feature, allowing
+  for personalized energy-saving adjustments.
 
 ## ⚠️ **Disclaimer**
 
@@ -57,10 +60,13 @@ During the installation, the script will:
 - Set up the required dependencies.
 - Prompt you for your Tado credentials and other optional configurations.
 - Initialize `tado-assistant.sh` as a background service.
+- Introduce a new configuration option for the 'Open Window' feature. You will be prompted to enter the maximum
+  duration (in seconds) that the system should wait before resuming normal operation after an open window is detected.
+  You can specify a custom duration or leave it empty to use the default duration set in the Tado app.
 
 ## 🔄 Updating
 
-To ensure you're running the latest version of Tado Assistant:
+To ensure you're running the latest version of Tado Assistant, follow these steps:
 
 1. Navigate to the `tado-assistant` directory:
 
@@ -68,13 +74,30 @@ To ensure you're running the latest version of Tado Assistant:
     cd path/to/tado-assistant
     ```
 
-2. Run the installation script with the `--update` flag:
+2. To update normally, run the installation script with the `--update` flag:
 
     ```bash
     sudo ./install.sh --update
     ```
 
-This will check for the latest version of the script, update any dependencies if necessary, and restart the service.
+   This will check for the latest version of the script, update any dependencies if necessary, and restart the service.
+
+3. If you need to force an update (for instance, to revert local changes to the official version), use
+   the `--force-update` flag:
+
+    ```bash
+    sudo ./install.sh --force-update
+    ```
+
+   This option will update Tado Assistant to the latest version from the repository, regardless of any local changes.
+   It's useful for ensuring your script matches the official release.
+
+### Note on Local Changes
+
+- When updating, the script automatically detects and backs up any local modifications. These backups are stored as
+  patch files, allowing you to restore your changes if needed.
+- In case of conflicts during a normal update, the script will halt and prompt you to resolve these manually, ensuring
+  your modifications are not unintentionally overwritten.
 
 ## 🔧 Configuration
 
@@ -85,6 +108,8 @@ Several environment variables drive the Tado Assistant:
 - `CHECKING_INTERVAL`: Frequency (in seconds) for home state checks. Default is every 15 seconds.
 - `ENABLE_LOG`: Toggle logging. Values: `true` or `false`. Default is `false`.
 - `LOG_FILE`: Destination for the log file. Default is `/var/log/tado-assistant.log`.
+- `MAX_OPEN_WINDOW_DURATION`: Define the maximum duration (in seconds) for the 'Open Window' detection feature to be
+  active. Leave this field empty to use the default duration set in the Tado app.
 
 These variables are stored in `/etc/tado-assistant.env`. Feel free to tweak them directly if needed.
 
@@ -112,8 +137,24 @@ environment is always optimal. Here's how you can interact with it:
     tail -f /var/log/tado-assistant.log
     ```
 
-4. **Environment Variables**: To tweak the behavior of Tado Assistant, adjust the environment variables
-   in `/etc/tado-assistant.env`. After making changes, restart the service for them to take effect.
+4. **Adjusting 'Open Window' Duration**: The 'Open Window' detection feature's duration can be customized to suit your
+   preferences. To modify this setting:
+    - Edit the `/etc/tado-assistant.env` file.
+    - Locate the `MAX_OPEN_WINDOW_DURATION` variable.
+    - Set its value to the desired number of seconds. For example, `MAX_OPEN_WINDOW_DURATION=300` for a 5-minute
+      duration.
+    - Save the changes and restart the service for them to take effect.
+        - For Linux:
+          ```bash
+          sudo systemctl restart tado-assistant.service
+          ```
+        - For macOS:
+          ```bash
+          launchctl unload ~/Library/LaunchAgents/com.user.tadoassistant.plist
+          launchctl load ~/Library/LaunchAgents/com.user.tadoassistant.plist
+          ```
+   This setting defines how long the system should wait before resuming normal operation after an open window is
+   detected, allowing for energy-saving adjustments tailored to your needs.
 
 Remember, Tado Assistant is designed to be hands-off. Once set up, it should require minimal interaction, letting you
 enjoy a comfortable home environment without any fuss.
