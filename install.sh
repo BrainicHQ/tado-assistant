@@ -204,46 +204,57 @@ update_script() {
     # Navigate to the directory of the script
     cd "$(dirname "$0")" || exit
 
-    # Check for local changes
-    if [[ $(git status --porcelain) ]]; then
-        echo "Local changes detected. Creating a backup..."
-        git diff > "backup-$(date +%Y%m%d%H%M%S).patch"
-    fi
-
-    # Fetch the latest changes from the remote repository
-    git fetch
-
     local force_update=0
     if [[ "$1" == "--force" ]]; then
         force_update=1
     fi
 
-    # Check if the local version is behind the remote version or force update is requested
-    if [[ "$(git rev-parse HEAD)" != "$(git rev-parse '@{u}')" ]] || [[ $force_update -eq 1 ]]; then
-        # If they're different or force update is requested, stop the service
-        echo "Stopping the Tado Assistant service..."
-        sudo systemctl stop tado-assistant.service
-
-        # Pull the latest changes
-        git pull --rebase || {
-            echo "Error: Update failed. Please resolve conflicts manually."
-            exit 1
-        }
-        echo "Script updated successfully!"
-
-        # Recheck dependencies
-        install_dependencies
-
-        # Replace the service script with the updated version
-        echo "Updating the script used by the service..."
-        cp tado-assistant.sh /usr/local/bin/tado-assistant.sh
-        chmod +x /usr/local/bin/tado-assistant.sh
-
-        # Restart the service
-        echo "Starting the Tado Assistant service..."
-        sudo systemctl start tado-assistant.service
+    if [[ $force_update -eq 1 ]]; then
+        echo "Force updating. Discarding any local changes..."
+        git reset --hard
+        git clean -fd
     else
-        echo "You already have the latest version of the script."
+        # Stash any local changes to avoid conflicts
+        git stash --include-untracked
+    fi
+
+    # Pull the latest changes from the remote repository
+    git pull --ff-only || {
+        echo "Error: Update failed. Trying to resolve..."
+        # In case of failure, try a hard reset to the latest remote commit
+        git fetch origin
+        if ! git reset --hard origin/"$(git rev-parse --abbrev-ref HEAD)"; then
+            echo "Error: Update failed and automatic resolution failed."
+            exit 1
+        fi
+    }
+
+    if [[ $force_update -eq 0 ]]; then
+        # Reapply stashed changes, if any
+        git stash pop
+    fi
+
+    echo "Script updated successfully!"
+
+    # Recheck dependencies
+    install_dependencies
+
+    # Replace the service script with the updated version
+    echo "Updating the script used by the service..."
+    cp tado-assistant.sh /usr/local/bin/tado-assistant.sh
+    chmod +x /usr/local/bin/tado-assistant.sh
+
+    # Restart the service based on the OS
+    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        echo "Starting the Tado Assistant service on Linux..."
+        sudo systemctl start tado-assistant.service
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        echo "Starting the Tado Assistant service on macOS..."
+        launchctl unload ~/Library/LaunchAgents/com.user.tadoassistant.plist
+        launchctl load ~/Library/LaunchAgents/com.user.tadoassistant.plist
+    else
+        echo "Unsupported OS for service management."
+        exit 1
     fi
 }
 
