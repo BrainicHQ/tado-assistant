@@ -1,19 +1,27 @@
 #!/bin/bash
 
-# Source the environment variables
-source /etc/tado-assistant.env
+# Source the environment variables if the file exists (e.g., when running in a Docker container)
+[ -f /etc/tado-assistant.env ] && source /etc/tado-assistant.env
 # Load settings from environment variables
 USERNAME="${TADO_USERNAME}"
 PASSWORD="${TADO_PASSWORD}"
 CHECKING_INTERVAL="${CHECKING_INTERVAL:-15}"
 ENABLE_LOG="${ENABLE_LOG:-false}"
 LOG_FILE="${LOG_FILE:-/tado-assistant.log}"
+# Create log directory if it doesn't exist
+LOG_DIR=$(dirname "$LOG_FILE")
+mkdir -p "$LOG_DIR"
 
 declare -A OPEN_WINDOW_ACTIVATION_TIMES
 LAST_MESSAGE="" # Used to prevent duplicate messages
 
 # Reset the log file if it's older than 10 days
 reset_log_if_needed() {
+    # Create the log file if it does not exist
+      if [ ! -f "$LOG_FILE" ]; then
+          touch "$LOG_FILE"
+      fi
+
     local max_age_days=10  # Max age in days (e.g., 10 days)
     local current_time
     local last_modified
@@ -28,9 +36,11 @@ reset_log_if_needed() {
     if [ "$age_days" -ge "$max_age_days" ]; then
         timestamp=$(date '+%Y%m%d%H%M%S')
         backup_log="${LOG_FILE}.${timestamp}"
-        mv "$LOG_FILE" "$backup_log"
+         if [ -f "$LOG_FILE" ]; then
+                mv "$LOG_FILE" "$backup_log"
+        fi
         touch "$LOG_FILE"
-        echo "Log reset: $backup_log"
+        echo "🔄 Log reset: $backup_log"
     fi
 }
 
@@ -54,7 +64,7 @@ login() {
 
     TOKEN=$(echo "$response" | jq -r '.access_token')
     if [ "$TOKEN" == "null" ] || [ -z "$TOKEN" ]; then
-        log_message "Login error, check the username / password!"
+        log_message "❌ Login error, check the username / password!"
         exit 1
     fi
 
@@ -67,7 +77,7 @@ login() {
 
     HOME_ID=$(echo "$HOME_DATA" | jq -r '.homes[0].id')
     if [ -z "$HOME_ID" ]; then
-        log_message "Error fetching home ID!"
+        log_message "⚠️ Error fetching home ID!"
         exit 1
     fi
 }
@@ -102,16 +112,16 @@ homeState() {
 
     if [ ${#devices_home[@]} -gt 0 ] && [ "$home_state" == "HOME" ]; then
         if [ ${#devices_home[@]} -eq 1 ]; then
-            log_message "Your home is in HOME Mode, the device ${devices_home[0]} is at home."
+            log_message "🏠 Your home is in HOME Mode, the device ${devices_home[0]} is at home."
         else
             devices_str=$(IFS=,; echo "${devices_home[*]}")
-            log_message "Your home is in HOME Mode, the devices $devices_str are at home."
+            log_message "🏠 Your home is in HOME Mode, the devices $devices_str are at home."
         fi
     elif [ ${#devices_home[@]} -eq 0 ] && [ "$home_state" == "AWAY" ]; then
-        log_message "Your home is in AWAY Mode and there are no devices at home."
+        log_message "🚶 Your home is in AWAY Mode and there are no devices at home."
     elif [ ${#devices_home[@]} -eq 0 ] && [ "$home_state" == "HOME" ]; then
-        log_message "Your home is in HOME Mode but there are no devices at home."
-        log_message "Activating AWAY mode."
+        log_message "🏠 Your home is in HOME Mode but there are no devices at home."
+        log_message "🔄 Activating AWAY mode."
         curl -s -X PUT "https://my.tado.com/api/v2/homes/$HOME_ID/presenceLock" \
             -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" \
@@ -119,12 +129,12 @@ homeState() {
         log_message "Done!"
     elif [ ${#devices_home[@]} -gt 0 ] && [ "$home_state" == "AWAY" ]; then
         if [ ${#devices_home[@]} -eq 1 ]; then
-            log_message "Your home is in AWAY Mode but the device ${devices_home[0]} is at home."
+            log_message "🚶 Your home is in AWAY Mode but the device ${devices_home[0]} is at home."
         else
             devices_str=$(IFS=,; echo "${devices_home[*]}")
-            log_message "Your home is in AWAY Mode but the devices $devices_str are at home."
+            log_message "🚶 Your home is in AWAY Mode but the devices $devices_str are at home."
         fi
-        log_message "Activating HOME mode."
+        log_message "🔄 Activating HOME mode."
         curl -s -X PUT "https://my.tado.com/api/v2/homes/$HOME_ID/presenceLock" \
             -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" \
@@ -165,30 +175,30 @@ echo "$zones" | jq -c '.[]' | while read -r zone; do
             time_diff=$((current_time - activation_time))
 
             if [ "$time_diff" -gt "$MAX_OPEN_WINDOW_DURATION" ]; then
-                log_message "$zone_name: Open window detected and activated for more than $MAX_OPEN_WINDOW_DURATION seconds. Cancelling open window mode."
+                log_message "❄️ $zone_name: Open window detected for more than $MAX_OPEN_WINDOW_DURATION seconds. Cancelling open window mode."
                 # Cancel open window mode for the zone
                 curl -s -X DELETE "https://my.tado.com/api/v2/homes/$HOME_ID/zones/$zone_id/state/openWindow" \
                     -H "Authorization: Bearer $TOKEN"
                 handle_curl_error
-                log_message "Cancelled open window mode for $zone_name."
+                log_message "✅ Cancelled open window mode for $zone_name."
                 unset "OPEN_WINDOW_ACTIVATION_TIMES[$zone_id]"
                 continue
             fi
         fi
 
-        log_message "$zone_name: open window detected, activating the OpenWindow mode."
+        log_message "❄️ $zone_name: Open window detected, activating OpenWindow mode."
         # Set open window mode for the zone
         curl -s -X POST "https://my.tado.com/api/v2/homes/$HOME_ID/zones/$zone_id/state/openWindow/activate" \
             -H "Authorization: Bearer $TOKEN"
         handle_curl_error
-        log_message "Activating open window mode for $zone_name."
+        log_message "🌬️ Activating open window mode for $zone_name."
 
         # Record the activation time
         OPEN_WINDOW_ACTIVATION_TIMES[$zone_id]=$current_time
     fi
 done
 
-    log_message "Waiting for a change in devices location or for an open window.."
+    log_message "⏳ Waiting for a change in devices location or for an open window.."
 }
 
 # Main execution

@@ -64,6 +64,51 @@ During the installation, the script will:
   duration (in seconds) that the system should wait before resuming normal operation after an open window is detected.
   You can specify a custom duration or leave it empty to use the default duration set in the Tado app.
 
+
+## 🐳 Docker Installation
+
+Tado Assistant can also be run as a Docker container, making it platform-independent and simplifying the setup process. Here's how you can get it up and running with Docker:
+
+1. **Build the Docker Image:**
+   First, build the Docker image from the Dockerfile provided in the repository.
+
+   ```bash
+   docker build -t tado-assistant .
+   ```
+
+2. **Run the Docker Container:**
+   Once the image is built, you can run Tado Assistant in a Docker container. Replace `<LOG_FILE_PATH>` with your desired log file path if you want to specify a custom one.
+
+   ```bash
+   docker run -d --name tado-assistant \
+              -e TADO_USERNAME='your_username' \
+              -e TADO_PASSWORD='your_password' \
+              -e CHECKING_INTERVAL=15 \
+              -e ENABLE_LOG=true \
+              -e LOG_FILE=<LOG_FILE_PATH> \
+              -e MAX_OPEN_WINDOW_DURATION= \
+              tado-assistant
+   ```
+
+   Note: The above command includes the most common environment variables. Adjust them according to your needs.
+
+3. **Docker Logs:**
+   To check the logs of your Tado Assistant Docker container, use:
+
+   ```bash
+   docker logs tado-assistant
+   ```
+
+4. **Stopping and Removing the Container:**
+   When you need to stop and remove the container, use the following commands:
+
+   ```bash
+   docker stop tado-assistant
+   docker rm tado-assistant
+   ```
+
+This Docker setup offers a straightforward way to deploy Tado Assistant without the need for manual environment setup on your host system.
+
 ## 🔄 Updating
 
 To ensure you're running the latest version of Tado Assistant, follow these steps:
