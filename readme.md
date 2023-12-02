@@ -69,15 +69,15 @@ During the installation, the script will:
 
 Tado Assistant can also be run as a Docker container, making it platform-independent and simplifying the setup process. Here's how you can get it up and running with Docker:
 
-1. **Build the Docker Image:**
-   First, build the Docker image from the Dockerfile provided in the repository.
+1. **Pull the Docker Image:**
+   Pull the latest version of Tado Assistant from Docker Hub:
 
    ```bash
-   docker build -t tado-assistant .
+   docker pull brainic/tado-assistant
    ```
 
 2. **Run the Docker Container:**
-   Once the image is built, you can run Tado Assistant in a Docker container. Replace `<LOG_FILE_PATH>` with your desired log file path if you want to specify a custom one.
+   After pulling the image from Docker Hub, you can run Tado Assistant in a Docker container. Replace `<LOG_FILE_PATH>` with your desired log file path if you want to specify a custom one.
 
    ```bash
    docker run -d --name tado-assistant \
@@ -87,7 +87,7 @@ Tado Assistant can also be run as a Docker container, making it platform-indepen
               -e ENABLE_LOG=true \
               -e LOG_FILE=<LOG_FILE_PATH> \
               -e MAX_OPEN_WINDOW_DURATION= \
-              tado-assistant
+              brainic/tado-assistant
    ```
 
    Note: The above command includes the most common environment variables. Adjust them according to your needs.
