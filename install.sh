@@ -75,46 +75,42 @@ install_dependencies() {
 
 # 2. Set Environment Variables
 set_env_variables() {
-    local max_attempts=3
-    local attempt=0
+    echo "Setting up environment variables for multiple Tado accounts..."
 
-    while (( attempt < max_attempts )); do
-        echo "Setting up environment variables..."
+    # Prompt for the number of accounts
+    read -rp "Enter the number of Tado accounts: " NUM_ACCOUNTS
 
-        read -p "Enter TADO_USERNAME: " TADO_USERNAME
-        read -p "Enter TADO_PASSWORD: " TADO_PASSWORD
-        read -p "Enter CHECKING_INTERVAL (default: 15): " CHECKING_INTERVAL
+    # Initialize the env file with NUM_ACCOUNTS
+    echo "export NUM_ACCOUNTS=$NUM_ACCOUNTS" > /etc/tado-assistant.env
 
-        echo "Enter the maximum duration for the 'Open Window' feature in seconds."
-        echo "This setting defines how long the system should wait before resuming normal operation after an open window is detected."
-        echo "Leave this field empty to use the default duration set in the Tado app."
-        read -p "Enter MAX_OPEN_WINDOW_DURATION (in seconds): " MAX_OPEN_WINDOW_DURATION
+    # Loop through each account for configuration
+    i=1
+    while [ "$i" -le "$NUM_ACCOUNTS" ]; do
+        echo "Configuring account $i..."
+        read -rp "Enter TADO_USERNAME for account $i: " TADO_USERNAME
+        read -rp "Enter TADO_PASSWORD for account $i: " TADO_PASSWORD
+        read -rp "Enter CHECKING_INTERVAL for account $i (default: 15): " CHECKING_INTERVAL
+        read -rp "Enter MAX_OPEN_WINDOW_DURATION for account $i (in seconds): " MAX_OPEN_WINDOW_DURATION
+        read -rp "Enable log for account $i? (true/false, default: false): " ENABLE_LOG
+        read -rp "Enter log file path for account $i (default: /var/log/tado-assistant.log): " LOG_FILE
 
-        read -p "Enable log? (true/false, default: false): " ENABLE_LOG
-        read -p "Enter log file path (default: /var/log/tado-assistant.log): " LOG_FILE
+        # Validate credentials
+        if validate_credentials "$TADO_USERNAME" "$TADO_PASSWORD"; then
+            # Append the settings for each account to the env file
+            {
+                echo "export TADO_USERNAME_$i=$TADO_USERNAME"
+                echo "export TADO_PASSWORD_$i=$TADO_PASSWORD"
+                echo "export CHECKING_INTERVAL_$i=${CHECKING_INTERVAL:-15}"
+                echo "export MAX_OPEN_WINDOW_DURATION_$i=${MAX_OPEN_WINDOW_DURATION:-}"
+                echo "export ENABLE_LOG_$i=${ENABLE_LOG:-false}"
+                echo "export LOG_FILE_$i=${LOG_FILE:-/var/log/tado-assistant.log}"
+            } >> /etc/tado-assistant.env
 
-        cat > /etc/tado-assistant.env <<EOL
-export TADO_USERNAME=$TADO_USERNAME
-export TADO_PASSWORD=$TADO_PASSWORD
-export CHECKING_INTERVAL=${CHECKING_INTERVAL:-15}
-${MAX_OPEN_WINDOW_DURATION:+export MAX_OPEN_WINDOW_DURATION=$MAX_OPEN_WINDOW_DURATION}
-export ENABLE_LOG=${ENABLE_LOG:-false}
-export LOG_FILE=${LOG_FILE:-/var/log/tado-assistant.log}
-EOL
-
-        # Validate the credentials
-        validate_credentials && break
-
-        (( attempt++ ))
-        if (( attempt < max_attempts )); then
-            echo "Please try again. ($((max_attempts - attempt)) attempts left)"
+            i=$((i+1)) # Move to next account only if validation succeeds
+        else
+            echo "Validation failed for account $i. Please re-enter the details."
         fi
     done
-
-    if (( attempt == max_attempts )); then
-        echo "Maximum attempts reached. Exiting."
-        exit 1
-    fi
 
     chmod 644 /etc/tado-assistant.env
 }
@@ -170,19 +166,18 @@ WantedBy=multi-user.target"
 
 # 4. Validate credentials
 validate_credentials() {
+    local username=$1
+    local password=$2
     local response
     local error_message
 
-    response=$(curl -s -X POST "https://auth.tado.com/oauth/token" \
+    if ! response=$(curl -s -X POST "https://auth.tado.com/oauth/token" \
         -d "client_id=public-api-preview" \
         -d "client_secret=4HJGRffVR8xb3XdEUQpjgZ1VplJi6Xgw" \
         -d "grant_type=password" \
-        -d "password=${TADO_PASSWORD}" \
+        -d "password=${password}" \
         -d "scope=home.user" \
-        -d "username=${TADO_USERNAME}")
-
-    # Check if curl command was successful
-    if [ $? -ne 0 ]; then
+        -d "username=${username}"); then
         echo "Error connecting to the API."
         return 1
     fi
@@ -191,7 +186,7 @@ validate_credentials() {
     error_message=$(echo "$response" | jq -r '.error_description // empty')
 
     if [ "$TOKEN" == "null" ] || [ -z "$TOKEN" ]; then
-        echo "Login error. ${error_message:-Check the username/password!}"
+        echo "Login error for user $username. ${error_message:-Check the username/password!}"
         return 1
     fi
     return 0
@@ -260,15 +255,8 @@ update_script() {
 
 # Check if the script is run with the --update or --force-update flag
 if [[ "$1" == "--update" ]] || [[ "$1" == "--force-update" ]]; then
-    # Call the update function with or without force option
+    # Call the update function with or without the force option
     update_script "$1"
-    exit 0
-fi
-
-# Check if the script is run with the --update flag
-if [[ "$1" == "--update" ]]; then
-    # Call the update function
-    update_script
     exit 0
 fi
 

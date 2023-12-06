@@ -3,13 +3,15 @@
 Discover the ultimate free alternative to Tado's Auto-Assist with Tado Assistant! This innovative utility enhances your
 Tado smart home experience by seamlessly integrating with the Tado API, offering advanced features like mobile
 device-based home state monitoring, open window detection in various zones, and customizable settings for open window
-duration. Ideal for those in search of a "Tado Auto
-Assist free" solution, Tado Assistant provides an efficient and cost-effective way to automate and optimize your home
+duration. Now with added support for multiple accounts, it's ideal for those managing several Tado devices across
+different locations. Tado Assistant provides an efficient and cost-effective way to automate and optimize your home
 environment. It's designed to be user-friendly and accessible, requiring minimal dependencies, making it a perfect
 choice for both technical and non-technical users.
 
 ## 🚀 Key Features - Free Tado Auto Assist
 
+- **Multi-Account Support**: Manage multiple Tado accounts seamlessly, perfect for users with devices in different
+  locations.
 - **State Monitoring**: Tado Assistant vigilantly tracks your home's status (HOME or AWAY) in real-time, offering a free
   alternative to Tado's Auto-Assist feature.
 - **Smart Adjustments**: Detects discrepancies, such as no devices at home but the state is set to HOME, and adjusts
@@ -64,10 +66,11 @@ During the installation, the script will:
   duration (in seconds) that the system should wait before resuming normal operation after an open window is detected.
   You can specify a custom duration or leave it empty to use the default duration set in the Tado app.
 
-
 ## 🐳 Docker Installation
 
-Tado Assistant can also be run as a Docker container, making it platform-independent and simplifying the setup process. Here's how you can get it up and running with Docker:
+Tado Assistant can now be run as a Docker container with support for multiple accounts, making it platform-independent
+and simplifying the setup process for users with multiple Tado devices. Here's how you can get it up and running with
+Docker:
 
 1. **Pull the Docker Image:**
    Pull the latest version of Tado Assistant from Docker Hub:
@@ -77,20 +80,30 @@ Tado Assistant can also be run as a Docker container, making it platform-indepen
    ```
 
 2. **Run the Docker Container:**
-   After pulling the image from Docker Hub, you can run Tado Assistant in a Docker container. Replace `<LOG_FILE_PATH>` with your desired log file path if you want to specify a custom one.
+   After pulling the image, you can run Tado Assistant in a Docker container, specifying environment variables for each
+   account you wish to manage. Replace `<LOG_FILE_PATH_n>` with your desired log file path for each account if you want
+   to
+   specify a custom one.
 
    ```bash
    docker run -d --name tado-assistant \
-              -e TADO_USERNAME='your_username' \
-              -e TADO_PASSWORD='your_password' \
-              -e CHECKING_INTERVAL=15 \
-              -e ENABLE_LOG=true \
-              -e LOG_FILE=<LOG_FILE_PATH> \
-              -e MAX_OPEN_WINDOW_DURATION= \
-              brainic/tado-assistant
+           -e NUM_ACCOUNTS=2 \
+           -e TADO_USERNAME_1='your_username_1' \
+           -e TADO_PASSWORD_1='your_password_1' \
+           -e CHECKING_INTERVAL_1=15 \
+           -e ENABLE_LOG_1=true \
+           -e LOG_FILE_1=<LOG_FILE_PATH_1> \
+           -e MAX_OPEN_WINDOW_DURATION_1= \
+           -e TADO_USERNAME_2='your_username_2' \
+           -e TADO_PASSWORD_2='your_password_2' \
+           -e CHECKING_INTERVAL_2=15 \
+           -e ENABLE_LOG_2=true \
+           -e LOG_FILE_2=<LOG_FILE_PATH_2> \
+           -e MAX_OPEN_WINDOW_DURATION_2= \
+           brainic/tado-assistant
    ```
 
-   Note: The above command includes the most common environment variables. Adjust them according to your needs.
+   Note: Adjust the environment variables according to the number of accounts and your specific needs.
 
 3. **Docker Logs:**
    To check the logs of your Tado Assistant Docker container, use:
@@ -107,7 +120,8 @@ Tado Assistant can also be run as a Docker container, making it platform-indepen
    docker rm tado-assistant
    ```
 
-This Docker setup offers a straightforward way to deploy Tado Assistant without the need for manual environment setup on your host system.
+This Docker setup offers a straightforward way to deploy Tado Assistant without the need for manual environment setup on
+your host system.
 
 ## 🔄 Updating
 
@@ -146,17 +160,23 @@ To ensure you're running the latest version of Tado Assistant, follow these step
 
 ## 🔧 Configuration
 
-Several environment variables drive the Tado Assistant:
+The Tado Assistant can be configured to handle multiple Tado accounts, with each account having its own set of
+environment variables:
 
-- `TADO_USERNAME`: Your Tado account username.
-- `TADO_PASSWORD`: Your Tado account password.
-- `CHECKING_INTERVAL`: Frequency (in seconds) for home state checks. Default is every 15 seconds.
-- `ENABLE_LOG`: Toggle logging. Values: `true` or `false`. Default is `false`.
-- `LOG_FILE`: Destination for the log file. Default is `/var/log/tado-assistant.log`.
-- `MAX_OPEN_WINDOW_DURATION`: Define the maximum duration (in seconds) for the 'Open Window' detection feature to be
-  active. Leave this field empty to use the default duration set in the Tado app.
+- `NUM_ACCOUNTS`: Number of Tado accounts you wish to manage. This should be set to the total number of accounts.
 
-These variables are stored in `/etc/tado-assistant.env`. Feel free to tweak them directly if needed.
+For each account (replace 'n' with the account number, e.g., 1, 2, 3, ...):
+
+- `TADO_USERNAME_n`: Your Tado account username for the nth account.
+- `TADO_PASSWORD_n`: Your Tado account password for the nth account.
+- `CHECKING_INTERVAL_n`: Frequency (in seconds) for home state checks for the nth account. Default is every 15 seconds.
+- `ENABLE_LOG_n`: Toggle logging for the nth account. Values: `true` or `false`. Default is `false`.
+- `LOG_FILE_n`: Destination for the log file for the nth account. Default is `/var/log/tado-assistant.log`.
+- `MAX_OPEN_WINDOW_DURATION_n`: Define the maximum duration (in seconds) for the 'Open Window' detection feature to be
+  active for the nth account. Leave this field empty to use the default duration set in the Tado app.
+
+These variables are stored in `/etc/tado-assistant.env`. Feel free to tweak them directly if needed. Ensure to adjust
+the variable suffix 'n' to match the corresponding account number.
 
 ## 🔄 Usage
 
