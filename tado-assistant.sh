@@ -48,7 +48,12 @@ handle_curl_error() {
 
 # Login function
 login() {
-    local account_index=$1 username_var=$2 password_var=$3 username=${!username_var} password=${!password_var} response expires_in token home_data home_id
+    local account_index=$1
+    local username_var=$2
+    local password_var=$3
+    local username=${!username_var}
+    local password=${!password_var}
+    local response expires_in token home_data home_id
 
     response=$(curl -s -X POST "https://auth.tado.com/oauth/token" \
         -d "client_id=public-api-preview&client_secret=4HJGRffVR8xb3XdEUQpjgZ1VplJi6Xgw&grant_type=password&password=$password&scope=home.user&username=$username")
