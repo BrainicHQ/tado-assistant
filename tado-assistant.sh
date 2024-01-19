@@ -61,7 +61,7 @@ login() {
 
     token=$(echo "$response" | jq -r '.access_token')
     if [ "$token" == "null" ] || [ -z "$token" ]; then
-        log_message "❌ Login error for account $account_index, check the username / password!"
+        log_message "❌ Login error for account $account_index: Please check the username and password. Then restart the container or service."
         exit 1
     fi
 
