@@ -30,7 +30,7 @@ install_dependencies() {
         fi
 
         case $DISTRO in
-            debian|ubuntu)
+            debian|ubuntu|raspbian)
                 if [[ $NEED_CURL -eq 1 ]] || [[ $NEED_JQ -eq 1 ]]; then
                     sudo apt-get update
                 fi
