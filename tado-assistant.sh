@@ -56,7 +56,8 @@ login() {
     local response expires_in token home_data home_id
 
     response=$(curl -s -X POST "https://auth.tado.com/oauth/token" \
-        -d "client_id=public-api-preview&client_secret=4HJGRffVR8xb3XdEUQpjgZ1VplJi6Xgw&grant_type=password&password=$password&scope=home.user&username=$username")
+        -d "client_id=public-api-preview&client_secret=4HJGRffVR8xb3XdEUQpjgZ1VplJi6Xgw&grant_type=password&scope=home.user" \
+        --data-urlencode "username=$username" --data-urlencode "password=$password")
     handle_curl_error
 
     token=$(echo "$response" | jq -r '.access_token')

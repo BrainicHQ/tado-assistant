@@ -30,7 +30,7 @@ install_dependencies() {
         fi
 
         case $DISTRO in
-            debian|ubuntu)
+            debian|ubuntu|raspbian)
                 if [[ $NEED_CURL -eq 1 ]] || [[ $NEED_JQ -eq 1 ]]; then
                     sudo apt-get update
                 fi
@@ -175,9 +175,9 @@ validate_credentials() {
         -d "client_id=public-api-preview" \
         -d "client_secret=4HJGRffVR8xb3XdEUQpjgZ1VplJi6Xgw" \
         -d "grant_type=password" \
-        -d "password=${password}" \
+        --data-urlencode "password=${password}" \
         -d "scope=home.user" \
-        -d "username=${username}"); then
+        --data-urlencode "username=${username}"); then
         echo "Error connecting to the API."
         return 1
     fi
