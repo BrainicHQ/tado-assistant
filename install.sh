@@ -37,7 +37,7 @@ install_dependencies() {
                 [[ $NEED_CURL -eq 1 ]] && sudo apt-get install -y curl
                 [[ $NEED_JQ -eq 1 ]] && sudo apt-get install -y jq
                 ;;
-            fedora|centos|rhel)
+            fedora|centos|rhel|ol)
                 [[ $NEED_CURL ]] && sudo yum install -y curl
                 [[ $NEED_JQ ]] && sudo yum install -y jq
                 ;;
