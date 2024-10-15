@@ -262,6 +262,5 @@ fi
 
 install_dependencies
 set_env_variables
-validate_credentials
 setup_service
 echo "Tado Assistant has been successfully installed and started!"
