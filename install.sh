@@ -88,7 +88,7 @@ set_env_variables() {
     while [ "$i" -le "$NUM_ACCOUNTS" ]; do
         echo "Configuring account $i..."
         read -rp "Enter TADO_USERNAME for account $i: " TADO_USERNAME
-        read -r -s -p "Enter TADO_PASSWORD for account $i: " TADO_PASSWORD
+        read -s -rp "Enter TADO_PASSWORD for account $i: " TADO_PASSWORD
         echo
         read -rp "Enter CHECKING_INTERVAL for account $i (default: 15): " CHECKING_INTERVAL
         read -rp "Enter MAX_OPEN_WINDOW_DURATION for account $i (in seconds): " MAX_OPEN_WINDOW_DURATION
@@ -97,10 +97,11 @@ set_env_variables() {
 
         # Validate credentials
         if validate_credentials "$TADO_USERNAME" "$TADO_PASSWORD"; then
-            # Escape single quotes in the password
-            escaped_password=$(printf '%s' "$TADO_PASSWORD" | sed "s/'/'\\\\''/g")
+            # Escape single quotes in the password and username
             escaped_username=$(printf '%s' "$TADO_USERNAME" | sed "s/'/'\\\\''/g")
-            # Append the settings for each account to the env file
+            escaped_password=$(printf '%s' "$TADO_PASSWORD" | sed "s/'/'\\\\''/g")
+
+            # Append the settings for each account to the env file, enclosing values in single quotes
             {
                 echo "export TADO_USERNAME_$i='$escaped_username'"
                 echo "export TADO_PASSWORD_$i='$escaped_password'"
