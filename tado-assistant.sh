@@ -1,7 +1,11 @@
 #!/bin/bash
 
 # Source the environment variables if the file exists
-[ -f /etc/tado-assistant.env ] && source /etc/tado-assistant.env
+if [ -f /etc/tado-assistant.env ]; then
+    set -a
+    source /etc/tado-assistant.env
+    set +a
+fi
 
 # Create log directory if it doesn't exist
 LOG_DIR=$(dirname "$LOG_FILE")

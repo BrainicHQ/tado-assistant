@@ -88,7 +88,8 @@ set_env_variables() {
     while [ "$i" -le "$NUM_ACCOUNTS" ]; do
         echo "Configuring account $i..."
         read -rp "Enter TADO_USERNAME for account $i: " TADO_USERNAME
-        read -rp "Enter TADO_PASSWORD for account $i: " TADO_PASSWORD
+        read -r -s -p "Enter TADO_PASSWORD for account $i: " TADO_PASSWORD
+        echo
         read -rp "Enter CHECKING_INTERVAL for account $i (default: 15): " CHECKING_INTERVAL
         read -rp "Enter MAX_OPEN_WINDOW_DURATION for account $i (in seconds): " MAX_OPEN_WINDOW_DURATION
         read -rp "Enable log for account $i? (true/false, default: false): " ENABLE_LOG
@@ -96,14 +97,17 @@ set_env_variables() {
 
         # Validate credentials
         if validate_credentials "$TADO_USERNAME" "$TADO_PASSWORD"; then
+            # Escape single quotes in the password
+            escaped_password=$(printf '%s' "$TADO_PASSWORD" | sed "s/'/'\\\\''/g")
+            escaped_username=$(printf '%s' "$TADO_USERNAME" | sed "s/'/'\\\\''/g")
             # Append the settings for each account to the env file
             {
-                echo "export TADO_USERNAME_$i=$TADO_USERNAME"
-                echo "export TADO_PASSWORD_$i=$TADO_PASSWORD"
-                echo "export CHECKING_INTERVAL_$i=${CHECKING_INTERVAL:-15}"
-                echo "export MAX_OPEN_WINDOW_DURATION_$i=${MAX_OPEN_WINDOW_DURATION:-}"
-                echo "export ENABLE_LOG_$i=${ENABLE_LOG:-false}"
-                echo "export LOG_FILE_$i=${LOG_FILE:-/var/log/tado-assistant.log}"
+                echo "export TADO_USERNAME_$i='$escaped_username'"
+                echo "export TADO_PASSWORD_$i='$escaped_password'"
+                echo "export CHECKING_INTERVAL_$i='${CHECKING_INTERVAL:-15}'"
+                echo "export MAX_OPEN_WINDOW_DURATION_$i='${MAX_OPEN_WINDOW_DURATION:-}'"
+                echo "export ENABLE_LOG_$i='${ENABLE_LOG:-false}'"
+                echo "export LOG_FILE_$i='${LOG_FILE:-/var/log/tado-assistant.log}'"
             } >> /etc/tado-assistant.env
 
             i=$((i+1)) # Move to next account only if validation succeeds
@@ -112,7 +116,7 @@ set_env_variables() {
         fi
     done
 
-    chmod 644 /etc/tado-assistant.env
+    chmod 600 /etc/tado-assistant.env
 }
 
 # 3. Set up as Service
@@ -175,9 +179,9 @@ validate_credentials() {
         -d 'client_id=public-api-preview' \
         -d 'client_secret=4HJGRffVR8xb3XdEUQpjgZ1VplJi6Xgw' \
         -d 'grant_type=password' \
-        --data-urlencode 'password='"$password" \
         -d 'scope=home.user' \
-        --data-urlencode 'username='"$username"); then
+        --data-urlencode "username=$username" \
+        --data-urlencode "password=$password"); then
         echo "Error connecting to the API."
         return 1
     fi
@@ -185,7 +189,7 @@ validate_credentials() {
     TOKEN=$(echo "$response" | jq -r '.access_token')
     error_message=$(echo "$response" | jq -r '.error_description // empty')
 
-    if [ "$TOKEN" == "null" ] || [ -z "$TOKEN" ]; then
+    if [ -z "$TOKEN" ] || [ "$TOKEN" == "null" ]; then
         echo "Login error for user $username. ${error_message:-Check the username/password!}"
         return 1
     fi
