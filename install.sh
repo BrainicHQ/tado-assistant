@@ -196,8 +196,17 @@ validate_credentials() {
 update_script() {
     echo "Checking for updates..."
 
+    # Determine the original user
+    if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
+        ORIGINAL_USER="$SUDO_USER"
+    else
+        # If not running with sudo, use the current user
+        ORIGINAL_USER=$(whoami)
+    fi
+
     # Navigate to the directory of the script
-    cd "$(dirname "$0")" || exit
+    SCRIPT_DIR="$(dirname "$0")"
+    cd "$SCRIPT_DIR" || exit
 
     local force_update=0
     if [[ "$1" == "--force" ]]; then
@@ -206,27 +215,27 @@ update_script() {
 
     if [[ $force_update -eq 1 ]]; then
         echo "Force updating. Discarding any local changes..."
-        git reset --hard
-        git clean -fd
+        sudo -u "$ORIGINAL_USER" git reset --hard
+        sudo -u "$ORIGINAL_USER" git clean -fd
     else
         # Stash any local changes to avoid conflicts
-        git stash --include-untracked
+        sudo -u "$ORIGINAL_USER" git stash --include-untracked
     fi
 
     # Pull the latest changes from the remote repository
-    git pull --ff-only || {
+    if ! sudo -u "$ORIGINAL_USER" git pull --ff-only; then
         echo "Error: Update failed. Trying to resolve..."
         # In case of failure, try a hard reset to the latest remote commit
-        git fetch origin
-        if ! git reset --hard origin/"$(git rev-parse --abbrev-ref HEAD)"; then
+        sudo -u "$ORIGINAL_USER" git fetch origin
+        if ! sudo -u "$ORIGINAL_USER" git reset --hard origin/"$(sudo -u "$ORIGINAL_USER" git rev-parse --abbrev-ref HEAD)"; then
             echo "Error: Update failed and automatic resolution failed."
             exit 1
         fi
-    }
+    fi
 
     if [[ $force_update -eq 0 ]]; then
         # Reapply stashed changes, if any
-        git stash pop
+        sudo -u "$ORIGINAL_USER" git stash pop
     fi
 
     echo "Script updated successfully!"
@@ -242,7 +251,7 @@ update_script() {
     # Restart the service based on the OS
     if [[ "$OSTYPE" == "linux-gnu"* ]]; then
         echo "Starting the Tado Assistant service on Linux..."
-        sudo systemctl start tado-assistant.service
+        systemctl restart tado-assistant.service
     elif [[ "$OSTYPE" == "darwin"* ]]; then
         echo "Starting the Tado Assistant service on macOS..."
         launchctl unload ~/Library/LaunchAgents/com.user.tadoassistant.plist
