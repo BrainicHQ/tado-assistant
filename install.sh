@@ -172,12 +172,12 @@ validate_credentials() {
     local error_message
 
     if ! response=$(curl -s -X POST "https://auth.tado.com/oauth/token" \
-        -d "client_id=public-api-preview" \
-        -d "client_secret=4HJGRffVR8xb3XdEUQpjgZ1VplJi6Xgw" \
-        -d "grant_type=password" \
-        --data-urlencode "password=${password}" \
-        -d "scope=home.user" \
-        --data-urlencode "username=${username}"); then
+        -d 'client_id=public-api-preview' \
+        -d 'client_secret=4HJGRffVR8xb3XdEUQpjgZ1VplJi6Xgw' \
+        -d 'grant_type=password' \
+        --data-urlencode 'password='"$password" \
+        -d 'scope=home.user' \
+        --data-urlencode 'username='"$username"); then
         echo "Error connecting to the API."
         return 1
     fi

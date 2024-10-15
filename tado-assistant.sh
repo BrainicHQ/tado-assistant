@@ -56,12 +56,16 @@ login() {
     local response expires_in token home_data home_id
 
     response=$(curl -s -X POST "https://auth.tado.com/oauth/token" \
-        -d "client_id=public-api-preview&client_secret=4HJGRffVR8xb3XdEUQpjgZ1VplJi6Xgw&grant_type=password&scope=home.user" \
-        --data-urlencode "username=$username" --data-urlencode "password=$password")
+        -d 'client_id=public-api-preview' \
+        -d 'client_secret=4HJGRffVR8xb3XdEUQpjgZ1VplJi6Xgw' \
+        -d 'grant_type=password' \
+        -d 'scope=home.user' \
+        --data-urlencode 'username='"$username" \
+        --data-urlencode 'password='"$password")
     handle_curl_error
 
     token=$(echo "$response" | jq -r '.access_token')
-    if [ "$token" == "null" ] || [ -z "$token" ]; then
+    if [ -z "$token" ] || [ "$token" == "null" ]; then
         log_message "❌ Login error for account $account_index: Please check the username and password. Then restart the container or service."
         exit 1
     fi
