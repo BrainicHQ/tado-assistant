@@ -92,6 +92,7 @@ set_env_variables() {
         echo
         read -rp "Enter CHECKING_INTERVAL for account $i (default: 15): " CHECKING_INTERVAL
         read -rp "Enter MAX_OPEN_WINDOW_DURATION for account $i (in seconds): " MAX_OPEN_WINDOW_DURATION
+        read -rp "Enable geofencing check for account $i? (true/false, default: true): " ENABLE_GEOFENCING
         read -rp "Enable log for account $i? (true/false, default: false): " ENABLE_LOG
         read -rp "Enter log file path for account $i (default: /var/log/tado-assistant.log): " LOG_FILE
 
@@ -107,6 +108,7 @@ set_env_variables() {
                 echo "export TADO_PASSWORD_$i='$escaped_password'"
                 echo "export CHECKING_INTERVAL_$i='${CHECKING_INTERVAL:-15}'"
                 echo "export MAX_OPEN_WINDOW_DURATION_$i='${MAX_OPEN_WINDOW_DURATION:-}'"
+                echo "export ENABLE_GEOFENCING_$i='${ENABLE_GEOFENCING:-true}'"
                 echo "export ENABLE_LOG_$i='${ENABLE_LOG:-false}'"
                 echo "export LOG_FILE_$i='${LOG_FILE:-/var/log/tado-assistant.log}'"
             } >> /etc/tado-assistant.env
