@@ -91,12 +91,14 @@ Docker:
            -e TADO_USERNAME_1='your_username_1' \
            -e TADO_PASSWORD_1='your_password_1' \
            -e CHECKING_INTERVAL_1=15 \
+           -e ENABLE_GEOFENCING_1=true \
            -e ENABLE_LOG_1=true \
            -e LOG_FILE_1=<LOG_FILE_PATH_1> \
            -e MAX_OPEN_WINDOW_DURATION_1= \
            -e TADO_USERNAME_2='your_username_2' \
            -e TADO_PASSWORD_2='your_password_2' \
            -e CHECKING_INTERVAL_2=15 \
+           -e ENABLE_GEOFENCING_2=true \
            -e ENABLE_LOG_2=true \
            -e LOG_FILE_2=<LOG_FILE_PATH_2> \
            -e MAX_OPEN_WINDOW_DURATION_2= \
@@ -170,6 +172,7 @@ For each account (replace 'n' with the account number, e.g., 1, 2, 3, ...):
 - `TADO_USERNAME_n`: Your Tado account username for the nth account.
 - `TADO_PASSWORD_n`: Your Tado account password for the nth account.
 - `CHECKING_INTERVAL_n`: Frequency (in seconds) for home state checks for the nth account. Default is every 15 seconds.
+- `ENABLE_GEOFENCING_n`: Toggle geofencing check for the nth account. Values: `true` or `false`. Default is `true`.
 - `ENABLE_LOG_n`: Toggle logging for the nth account. Values: `true` or `false`. Default is `false`.
 - `LOG_FILE_n`: Destination for the log file for the nth account. Default is `/var/log/tado-assistant.log`.
 - `MAX_OPEN_WINDOW_DURATION_n`: Define the maximum duration (in seconds) for the 'Open Window' detection feature to be

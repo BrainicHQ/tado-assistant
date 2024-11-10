@@ -117,30 +117,36 @@ homeState() {
     mapfile -t devices_home < <(echo "$mobile_devices" | jq -r '.[] | select(.settings.geoTrackingEnabled == true and .location.atHome == true) | .name')
     handle_curl_error
 
-    local devices_str
-    if [ ${#devices_home[@]} -gt 0 ] && [ "$home_state" == "HOME" ]; then
-        devices_str=$(IFS=,; echo "${devices_home[*]}")
-        log_message "🏠 Account $account_index: Home is in HOME Mode, the devices $devices_str are at home."
-    elif [ ${#devices_home[@]} -eq 0 ] && [ "$home_state" == "AWAY" ]; then
-        log_message "🚶 Account $account_index: Home is in AWAY Mode and there are no devices at home."
-    elif [ ${#devices_home[@]} -eq 0 ] && [ "$home_state" == "HOME" ]; then
-        log_message "🏠 Account $account_index: Home is in HOME Mode but there are no devices at home."
-        curl -s -X PUT "https://my.tado.com/api/v2/homes/$home_id/presenceLock" \
-            -H "Authorization: Bearer ${TOKENS[$account_index]}" \
-            -H "Content-Type: application/json" \
-            -d '{"homePresence": "AWAY"}'
-        handle_curl_error
-        log_message "Done! Activated AWAY mode for account $account_index."
-    elif [ ${#devices_home[@]} -gt 0 ] && [ "$home_state" == "AWAY" ]; then
-        devices_str=$(IFS=,; echo "${devices_home[*]}")
-        log_message "🚶 Account $account_index: Home is in AWAY Mode but the devices $devices_str are at home."
-        curl -s -X PUT "https://my.tado.com/api/v2/homes/$home_id/presenceLock" \
-            -H "Authorization: Bearer ${TOKENS[$account_index]}" \
-            -H "Content-Type: application/json" \
-            -d '{"homePresence": "HOME"}'
-        handle_curl_error
-        log_message "Done! Activated HOME mode for account $account_index."
+    if [ "$ENABLE_GEOFENCING" == true ]; then
+      log_message "🏠 Account $account_index: Geofencing enabled."
+      local devices_str
+      if [ ${#devices_home[@]} -gt 0 ] && [ "$home_state" == "HOME" ]; then
+          devices_str=$(IFS=,; echo "${devices_home[*]}")
+          log_message "🏠 Account $account_index: Home is in HOME Mode, the devices $devices_str are at home."
+      elif [ ${#devices_home[@]} -eq 0 ] && [ "$home_state" == "AWAY" ]; then
+          log_message "🚶 Account $account_index: Home is in AWAY Mode and there are no devices at home."
+      elif [ ${#devices_home[@]} -eq 0 ] && [ "$home_state" == "HOME" ]; then
+          log_message "🏠 Account $account_index: Home is in HOME Mode but there are no devices at home."
+          curl -s -X PUT "https://my.tado.com/api/v2/homes/$home_id/presenceLock" \
+              -H "Authorization: Bearer ${TOKENS[$account_index]}" \
+              -H "Content-Type: application/json" \
+              -d '{"homePresence": "AWAY"}'
+          handle_curl_error
+          log_message "Done! Activated AWAY mode for account $account_index."
+      elif [ ${#devices_home[@]} -gt 0 ] && [ "$home_state" == "AWAY" ]; then
+          devices_str=$(IFS=,; echo "${devices_home[*]}")
+          log_message "🚶 Account $account_index: Home is in AWAY Mode but the devices $devices_str are at home."
+          curl -s -X PUT "https://my.tado.com/api/v2/homes/$home_id/presenceLock" \
+              -H "Authorization: Bearer ${TOKENS[$account_index]}" \
+              -H "Content-Type: application/json" \
+              -d '{"homePresence": "HOME"}'
+          handle_curl_error
+          log_message "Done! Activated HOME mode for account $account_index."
+      fi
+    else
+      log_message "🏠 Account $account_index: Geofencing disabled."
     fi
+
       # Fetch zones for the home
          zones=$(curl -s -X GET "https://my.tado.com/api/v2/homes/$home_id/zones" -H "Authorization: Bearer ${TOKENS[$account_index]}")
         handle_curl_error
@@ -202,11 +208,15 @@ for (( i=1; i<=NUM_ACCOUNTS; i++ )); do
     USERNAME_VAR="TADO_USERNAME_$i"
     PASSWORD_VAR="TADO_PASSWORD_$i"
     CHECKING_INTERVAL_VAR="CHECKING_INTERVAL_$i"
+    MAX_OPEN_WINDOW_DURATION_VAR="MAX_OPEN_WINDOW_DURATION_$i"
+    ENABLE_GEOFENCING_VAR="ENABLE_GEOFENCING_$i"
     ENABLE_LOG_VAR="ENABLE_LOG_$i"
     LOG_FILE_VAR="LOG_FILE_$i"
 
     # Fetch dynamic variables
     CHECKING_INTERVAL=${!CHECKING_INTERVAL_VAR:-15}
+    MAX_OPEN_WINDOW_DURATION=${!MAX_OPEN_WINDOW_DURATION_VAR:-}
+    ENABLE_GEOFENCING=${!ENABLE_GEOFENCING_VAR:-false}
     ENABLE_LOG=${!ENABLE_LOG_VAR:-false}
     LOG_FILE=${!LOG_FILE_VAR:-'/var/log/tado-assistant.log'}
 
