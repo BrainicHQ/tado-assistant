@@ -46,6 +46,23 @@ handle_curl_error() {
     return 0
 }
 
+# Init refresh token
+initRefreshToken()
+{
+    local account_index=$1
+    local refresh_token_var=$2
+    local old_refresh_token=${!refresh_token_var}
+
+    if [ -z "$old_refresh_token" ] || [ "$old_refresh_token" = "null" ]; then
+        log_message "❌ No valid refresh token for account $i. Please reinstall or re-auth."
+        exit 1
+    fi
+
+    REFRESH_TOKENS[$account_index]=${!refresh_token_var}
+
+    log_message "♻️ Refresh token for account $i initialized."
+}
+
 # Login function
 login() {
     local account_index=$1  
