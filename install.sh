@@ -86,6 +86,7 @@ set_env_variables() {
     # Loop through each account for configuration
     i=1
     while [ "$i" -le "$NUM_ACCOUNTS" ]; do
+        echo "Configuring account $i..."
         echo "Requesting device code from tado°..."
 
         device_response=$(curl -s -X POST "https://login.tado.com/oauth2/device_authorize" \
