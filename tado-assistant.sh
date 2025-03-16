@@ -7,7 +7,7 @@
 LOG_DIR=$(dirname "$LOG_FILE")
 mkdir -p "$LOG_DIR"
 
-declare -A OPEN_WINDOW_ACTIVATION_TIMES TOKENS EXPIRY_TIMES HOME_IDS
+declare -A OPEN_WINDOW_ACTIVATION_TIMES TOKENS REFRESH_TOKENS EXPIRY_TIMES HOME_IDS
 LAST_MESSAGE="" # Used to prevent duplicate messages
 
 # Reset the log file if it's older than 10 days
@@ -48,42 +48,57 @@ handle_curl_error() {
 
 # Login function
 login() {
-    local account_index=$1
-    local username_var=$2
-    local password_var=$3
-    local username=${!username_var}
-    local password=${!password_var}
-    local response expires_in token home_data home_id
+    local account_index=$1  
+    local response expires_in token refresh_token
 
-    response=$(curl -s -X POST "https://auth.tado.com/oauth/token" \
-        -d 'client_id=public-api-preview' \
-        -d 'client_secret=4HJGRffVR8xb3XdEUQpjgZ1VplJi6Xgw' \
-        -d 'grant_type=password' \
-        -d 'scope=home.user' \
-        --data-urlencode 'username='"$username" \
-        --data-urlencode 'password='"$password")
+    response=$(curl -s -X POST "https://login.tado.com/oauth2/token" \
+        -d "client_id=1bb50063-6b0c-4d11-bd99-387f4a91cc46" \
+        -d "grant_type=refresh_token" \
+        -d "refresh_token=${REFRESH_TOKENS[$account_index]}")
     handle_curl_error
 
-    token=$(echo "$response" | jq -r '.access_token')
+    token=$(echo "$response" | jq -r '.access_token // empty')
     if [ -z "$token" ] || [ "$token" == "null" ]; then
-        log_message "❌ Login error for account $account_index: Please check the username and password. Then restart the container or service."
+        log_message "❌ Login error for account $account_index: Failed to refresh token."
+        log_message "$response"
         exit 1
     fi
 
     TOKENS[$account_index]=$token
-    expires_in=$(echo "$response" | jq -r '.expires_in')
+    expires_in=$(echo "$response" | jq -r '.expires_in // 600')
     EXPIRY_TIMES[$account_index]=$(($(date +%s) + expires_in - 60))
 
+    refresh_token=$(echo "$response" | jq -r '.refresh_token // empty')
+    sed -i "s|^export TADO_REFRESH_TOKEN_$i=.*|export TADO_REFRESH_TOKEN_$i='$refresh_token'|" /etc/tado-assistant.env
+
+    if [ -z "$refresh_token" ] || [ "$refresh_token" == "null" ]; then
+        log_message "❌ Login error for account $account_index: Failed to get new refresh token."
+        exit 1
+    fi
+
+    REFRESH_TOKENS[$account_index]=$refresh_token 
+
+    log_message "♻️ Refreshed token for account $i."
+}
+
+# Get Home ID function
+getHomeId()
+{
+    local account_index=$1
+    local home_data home_id
+    
     home_data=$(curl -s -X GET "https://my.tado.com/api/v2/me" -H "Authorization: Bearer ${TOKENS[$account_index]}")
     handle_curl_error
 
     home_id=$(echo "$home_data" | jq -r '.homes[0].id')
     if [ -z "$home_id" ]; then
-        log_message "⚠️ Error fetching home ID for account $account_index!"
+        log_message "❌ Error fetching home ID for account $account_index!"
         exit 1
     fi
 
     HOME_IDS[$account_index]=$home_id
+
+    log_message "🏠 Account $i: Found home ID $home_id"
 }
 
 log_message() {
@@ -105,7 +120,7 @@ homeState() {
      current_time=$(date +%s)
 
     if [ -n "${EXPIRY_TIMES[$account_index]}" ] && [ "$current_time" -ge "${EXPIRY_TIMES[$account_index]}" ]; then
-        login "$account_index" "TADO_USERNAME_$account_index" "TADO_PASSWORD_$account_index"
+        login "$account_index"
     fi
 
      home_state=$(curl -s -X GET "https://my.tado.com/api/v2/homes/$home_id/state" -H "Authorization: Bearer ${TOKENS[$account_index]}" | jq -r '.presence')
@@ -220,8 +235,10 @@ for (( i=1; i<=NUM_ACCOUNTS; i++ )); do
     ENABLE_LOG=${!ENABLE_LOG_VAR:-false}
     LOG_FILE=${!LOG_FILE_VAR:-'/var/log/tado-assistant.log'}
 
-    # Login and get the home ID
-    login "$i" "$USERNAME_VAR" "$PASSWORD_VAR"
+    # Init
+    initRefreshToken "$i" "$TOKEN_VAR"
+    login "$i"
+    getHomeId "$i"
 
     # Loop to monitor home state
     while true; do
