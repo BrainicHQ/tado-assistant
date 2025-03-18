@@ -14,7 +14,7 @@ install_dependencies() {
     NEED_CURL=0
     NEED_JQ=0
 
-    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    if [[ "$OSTYPE" == "linux"* ]]; then
         # Detecting the distribution
         if [ -f /etc/os-release ]; then
             . /etc/os-release
@@ -32,23 +32,27 @@ install_dependencies() {
         case $DISTRO in
             debian|ubuntu|raspbian)
                 if [[ $NEED_CURL -eq 1 ]] || [[ $NEED_JQ -eq 1 ]]; then
-                    sudo apt-get update
+                    apt-get update
                 fi
-                [[ $NEED_CURL -eq 1 ]] && sudo apt-get install -y curl
-                [[ $NEED_JQ -eq 1 ]] && sudo apt-get install -y jq
+                [[ $NEED_CURL -eq 1 ]] && apt-get install -y curl
+                [[ $NEED_JQ -eq 1 ]] && apt-get install -y jq
                 ;;
             fedora|centos|rhel|ol)
-                [[ $NEED_CURL ]] && sudo yum install -y curl
-                [[ $NEED_JQ ]] && sudo yum install -y jq
+                [[ $NEED_CURL ]] && yum install -y curl
+                [[ $NEED_JQ ]] && yum install -y jq
                 ;;
             arch|manjaro)
-                [[ $NEED_CURL || $NEED_JQ ]] && sudo pacman -Sy
-                [[ $NEED_CURL ]] && sudo pacman -S curl
-                [[ $NEED_JQ ]] && sudo pacman -S jq
+                [[ $NEED_CURL || $NEED_JQ ]] && pacman -Sy
+                [[ $NEED_CURL ]] && pacman -S curl
+                [[ $NEED_JQ ]] && pacman -S jq
                 ;;
             suse|opensuse*)
-                [[ $NEED_CURL ]] && sudo zypper install curl
-                [[ $NEED_JQ ]] && sudo zypper install jq
+                [[ $NEED_CURL ]] && zypper install curl
+                [[ $NEED_JQ ]] && zypper install jq
+                ;;
+            alpine)
+                [[ $NEED_CURL -eq 1 ]] && apk add --no-cache curl
+                [[ $NEED_JQ -eq 1 ]] && apk add --no-cache jq
                 ;;
             *)
                 echo "Unsupported Linux distribution"
@@ -164,8 +168,15 @@ setup_service() {
     echo "Setting up the service..."
 
     SCRIPT_PATH="/usr/local/bin/tado-assistant.sh"
-    cp "$(dirname "$0")/tado-assistant.sh" "$SCRIPT_PATH"
-    chmod +x $SCRIPT_PATH
+    CURRENT_SCRIPT_DIR="$(dirname "$(realpath "$0")")"
+    SOURCE_SCRIPT="${CURRENT_SCRIPT_DIR}/tado-assistant.sh"
+
+    # Only copy if the source and destination are different
+    if [ "$(realpath "$SOURCE_SCRIPT")" != "$(realpath "$SCRIPT_PATH")" ]; then
+        echo "Installing script to $SCRIPT_PATH"
+        cp "$SOURCE_SCRIPT" "$SCRIPT_PATH"
+        chmod +x "$SCRIPT_PATH"
+    fi
 
     if [[ "$OSTYPE" == "linux-gnu"* ]]; then
         SERVICE_CONTENT="[Unit]
@@ -173,15 +184,15 @@ Description=Tado Assistant Service
 
 [Service]
 ExecStart=$SCRIPT_PATH
-User=$(whoami)
+User=root
 Restart=always
 
 [Install]
 WantedBy=multi-user.target"
 
-        echo "$SERVICE_CONTENT" | sudo tee /etc/systemd/system/tado-assistant.service > /dev/null
-        sudo systemctl enable tado-assistant.service
-        sudo systemctl restart tado-assistant.service
+        echo "$SERVICE_CONTENT" > /etc/systemd/system/tado-assistant.service
+        systemctl enable tado-assistant.service
+        systemctl restart tado-assistant.service
 
     elif [[ "$OSTYPE" == "darwin"* ]]; then
         LAUNCHD_CONTENT="<?xml version=\"1.0\" encoding=\"UTF-8\"?>
