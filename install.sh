@@ -73,7 +73,7 @@ install_dependencies() {
     fi
 }
 
-# 2. Set Environment Variables
+# 2. Set Environment Variables with Device Code Flow
 set_env_variables() {
     echo "Setting up environment variables for multiple Tado accounts..."
 
@@ -87,36 +87,73 @@ set_env_variables() {
     i=1
     while [ "$i" -le "$NUM_ACCOUNTS" ]; do
         echo "Configuring account $i..."
-        read -rp "Enter TADO_USERNAME for account $i: " TADO_USERNAME
-        read -s -rp "Enter TADO_PASSWORD for account $i: " TADO_PASSWORD
-        echo
+
+        response=$(curl -s -X POST "https://login.tado.com/oauth2/device_authorize" \
+            -d "client_id=1bb50063-6b0c-4d11-bd99-387f4a91cc46" \
+            -d "scope=offline_access")
+        if [ $? -ne 0 ]; then
+            echo "Failed to initiate device code flow."
+            exit 1
+        fi
+
+        device_code=$(echo "$response" | jq -r '.device_code')
+        user_code=$(echo "$response" | jq -r '.user_code')
+        verification_uri_complete=$(echo "$response" | jq -r '.verification_uri_complete')
+        interval=$(echo "$response" | jq -r '.interval')
+        expires_in=$(echo "$response" | jq -r '.expires_in')
+
+        if [ -z "$device_code" ] || [ "$device_code" == "null" ]; then
+            echo "Error: Failed to retrieve device code."
+            exit 1
+        fi
+
+        echo "Please visit in your browser: $verification_uri_complete"
+        echo "User code: $user_code"
+        echo "Waiting for authentication..."
+
+        start_time=$(date +%s)
+        while true; do
+            current_time=$(date +%s)
+            if (( current_time - start_time > expires_in )); then
+                echo "Authentication timed out."
+                exit 1
+            fi
+
+            token_response=$(curl -s -X POST "https://login.tado.com/oauth2/token" \
+                -d "client_id=1bb50063-6b0c-4d11-bd99-387f4a91cc46" \
+                -d "device_code=$device_code" \
+                -d "grant_type=urn:ietf:params:oauth:grant-type:device_code")
+
+            error=$(echo "$token_response" | jq -r '.error // empty')
+            if [ "$error" == "authorization_pending" ]; then
+                sleep "$interval"
+                continue
+            elif [ -n "$error" ]; then
+                echo "Error: $error"
+                exit 1
+            else
+                refresh_token=$(echo "$token_response" | jq -r '.refresh_token')
+                break
+            fi
+        done
+
         read -rp "Enter CHECKING_INTERVAL for account $i (default: 15): " CHECKING_INTERVAL
         read -rp "Enter MAX_OPEN_WINDOW_DURATION for account $i (in seconds): " MAX_OPEN_WINDOW_DURATION
         read -rp "Enable geofencing check for account $i? (true/false, default: true): " ENABLE_GEOFENCING
         read -rp "Enable log for account $i? (true/false, default: false): " ENABLE_LOG
         read -rp "Enter log file path for account $i (default: /var/log/tado-assistant.log): " LOG_FILE
 
-        # Validate credentials
-        if validate_credentials "$TADO_USERNAME" "$TADO_PASSWORD"; then
-            # Escape single quotes in the password and username
-            escaped_username=$(printf '%s' "$TADO_USERNAME" | sed "s/'/'\\\\''/g")
-            escaped_password=$(printf '%s' "$TADO_PASSWORD" | sed "s/'/'\\\\''/g")
+        escaped_refresh_token=$(printf '%s' "$refresh_token" | sed "s/'/'\\\\''/g")
+        {
+            echo "export TADO_REFRESH_TOKEN_$i='$escaped_refresh_token'"
+            echo "export CHECKING_INTERVAL_$i='${CHECKING_INTERVAL:-15}'"
+            echo "export MAX_OPEN_WINDOW_DURATION_$i='${MAX_OPEN_WINDOW_DURATION:-}'"
+            echo "export ENABLE_GEOFENCING_$i='${ENABLE_GEOFENCING:-true}'"
+            echo "export ENABLE_LOG_$i='${ENABLE_LOG:-false}'"
+            echo "export LOG_FILE_$i='${LOG_FILE:-/var/log/tado-assistant.log}'"
+        } >> /etc/tado-assistant.env
 
-            # Append the settings for each account to the env file, enclosing values in single quotes
-            {
-                echo "export TADO_USERNAME_$i='$escaped_username'"
-                echo "export TADO_PASSWORD_$i='$escaped_password'"
-                echo "export CHECKING_INTERVAL_$i='${CHECKING_INTERVAL:-15}'"
-                echo "export MAX_OPEN_WINDOW_DURATION_$i='${MAX_OPEN_WINDOW_DURATION:-}'"
-                echo "export ENABLE_GEOFENCING_$i='${ENABLE_GEOFENCING:-true}'"
-                echo "export ENABLE_LOG_$i='${ENABLE_LOG:-false}'"
-                echo "export LOG_FILE_$i='${LOG_FILE:-/var/log/tado-assistant.log}'"
-            } >> /etc/tado-assistant.env
-
-            i=$((i+1)) # Move to next account only if validation succeeds
-        else
-            echo "Validation failed for account $i. Please re-enter the details."
-        fi
+        i=$((i+1))
     done
 
     chmod 600 /etc/tado-assistant.env
@@ -171,35 +208,7 @@ WantedBy=multi-user.target"
     fi
 }
 
-# 4. Validate credentials
-validate_credentials() {
-    local username=$1
-    local password=$2
-    local response
-    local error_message
-
-    if ! response=$(curl -s -X POST "https://auth.tado.com/oauth/token" \
-        -d 'client_id=public-api-preview' \
-        -d 'client_secret=4HJGRffVR8xb3XdEUQpjgZ1VplJi6Xgw' \
-        -d 'grant_type=password' \
-        -d 'scope=home.user' \
-        --data-urlencode "username=$username" \
-        --data-urlencode "password=$password"); then
-        echo "Error connecting to the API."
-        return 1
-    fi
-
-    TOKEN=$(echo "$response" | jq -r '.access_token')
-    error_message=$(echo "$response" | jq -r '.error_description // empty')
-
-    if [ -z "$TOKEN" ] || [ "$TOKEN" == "null" ]; then
-        echo "Login error for user $username. ${error_message:-Check the username/password!}"
-        return 1
-    fi
-    return 0
-}
-
-# 5. Update the script
+# 4. Update the script
 update_script() {
     echo "Checking for updates..."
 
