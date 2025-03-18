@@ -16,20 +16,14 @@ reset_log_if_needed() {
         touch "$LOG_FILE"
     fi
 
-    local max_age_days=10  # Max age in days (e.g., 10 days)
-    local current_time
-    local last_modified
-    local age_days
-    local timestamp
-    local backup_log
-
-     current_time=$(date +%s)
-     last_modified=$(date -r "$LOG_FILE" +%s)
-     age_days=$(( (current_time - last_modified) / 86400 ))
+    local max_age_days=10
+    local current_time=$(date +%s)
+    local last_modified=$(date -r "$LOG_FILE" +%s)
+    local age_days=$(( (current_time - last_modified) / 86400 ))
 
     if [ "$age_days" -ge "$max_age_days" ]; then
-         timestamp=$(date '+%Y%m%d%H%M%S')
-         backup_log="${LOG_FILE}.${timestamp}"
+        local timestamp=$(date '+%Y%m%d%H%M%S')
+        local backup_log="${LOG_FILE}.${timestamp}"
         mv "$LOG_FILE" "$backup_log"
         touch "$LOG_FILE"
         echo "🔄 Log reset: $backup_log"
@@ -49,29 +43,38 @@ handle_curl_error() {
 # Login function
 login() {
     local account_index=$1
-    local username_var=$2
-    local password_var=$3
-    local username=${!username_var}
-    local password=${!password_var}
-    local response expires_in token home_data home_id
+    local refresh_token_var="TADO_REFRESH_TOKEN_$account_index"
+    local refresh_token="${!refresh_token_var}"
+    local token_response expires_in new_refresh_token home_data home_id
 
-    response=$(curl -s -X POST "https://auth.tado.com/oauth/token" \
-        -d 'client_id=public-api-preview' \
-        -d 'client_secret=4HJGRffVR8xb3XdEUQpjgZ1VplJi6Xgw' \
-        -d 'grant_type=password' \
-        -d 'scope=home.user' \
-        --data-urlencode 'username='"$username" \
-        --data-urlencode 'password='"$password")
-    handle_curl_error
+    token_response=$(curl -s -X POST "https://login.tado.com/oauth2/token" \
+        -d "client_id=1bb50063-6b0c-4d11-bd99-387f4a91cc46" \
+        -d "grant_type=refresh_token" \
+        -d "refresh_token=$refresh_token")
 
-    token=$(echo "$response" | jq -r '.access_token')
-    if [ -z "$token" ] || [ "$token" == "null" ]; then
-        log_message "❌ Login error for account $account_index: Please check the username and password. Then restart the container or service."
+    if ! handle_curl_error; then
+        log_message "❌ Curl error during token refresh for account $account_index. Retrying later."
+        return 1
+    fi
+
+    local access_token=$(echo "$token_response" | jq -r '.access_token')
+    new_refresh_token=$(echo "$token_response" | jq -r '.refresh_token')
+
+    if [ -z "$access_token" ] || [ "$access_token" == "null" ]; then
+        log_message "❌ Refresh token error for account $account_index: Failed to obtain new access token."
         exit 1
     fi
 
-    TOKENS[$account_index]=$token
-    expires_in=$(echo "$response" | jq -r '.expires_in')
+    # Update environment file with new refresh token
+    local escaped_new_refresh_token=$(printf "%s" "$new_refresh_token" | sed "s/'/'\\\\''/g")
+    sed -i "s/^export TADO_REFRESH_TOKEN_${account_index}='.*'/export TADO_REFRESH_TOKEN_${account_index}='${escaped_new_refresh_token}'/" /etc/tado-assistant.env
+
+    # Update in-memory environment variable
+    declare "TADO_REFRESH_TOKEN_${account_index}=$new_refresh_token"
+    export "TADO_REFRESH_TOKEN_${account_index}"
+
+    TOKENS[$account_index]=$access_token
+    expires_in=$(echo "$token_response" | jq -r '.expires_in')
     EXPIRY_TIMES[$account_index]=$(($(date +%s) + expires_in - 60))
 
     home_data=$(curl -s -X GET "https://my.tado.com/api/v2/me" -H "Authorization: Bearer ${TOKENS[$account_index]}")
@@ -97,21 +100,18 @@ log_message() {
 }
 
 homeState() {
-      local home_state mobile_devices devices_home devices_str zones zone_id zone_name home_id current_time account_index
-      local open_window_detection_supported open_window_detection_enabled open_window_detected
-
-     account_index=$1
-     home_id=${HOME_IDS[$account_index]}
-     current_time=$(date +%s)
+    local account_index=$1
+    local home_id=${HOME_IDS[$account_index]}
+    local current_time=$(date +%s)
 
     if [ -n "${EXPIRY_TIMES[$account_index]}" ] && [ "$current_time" -ge "${EXPIRY_TIMES[$account_index]}" ]; then
-        login "$account_index" "TADO_USERNAME_$account_index" "TADO_PASSWORD_$account_index"
+        login "$account_index"
     fi
 
-     home_state=$(curl -s -X GET "https://my.tado.com/api/v2/homes/$home_id/state" -H "Authorization: Bearer ${TOKENS[$account_index]}" | jq -r '.presence')
+    local home_state=$(curl -s -X GET "https://my.tado.com/api/v2/homes/$home_id/state" -H "Authorization: Bearer ${TOKENS[$account_index]}" | jq -r '.presence')
     handle_curl_error
 
-     mobile_devices=$(curl -s -X GET "https://my.tado.com/api/v2/homes/$home_id/mobileDevices" -H "Authorization: Bearer ${TOKENS[$account_index]}")
+    local mobile_devices=$(curl -s -X GET "https://my.tado.com/api/v2/homes/$home_id/mobileDevices" -H "Authorization: Bearer ${TOKENS[$account_index]}")
     handle_curl_error
 
     mapfile -t devices_home < <(echo "$mobile_devices" | jq -r '.[] | select(.settings.geoTrackingEnabled == true and .location.atHome == true) | .name')
@@ -147,26 +147,22 @@ homeState() {
       log_message "🏠 Account $account_index: Geofencing disabled."
     fi
 
-      # Fetch zones for the home
-         zones=$(curl -s -X GET "https://my.tado.com/api/v2/homes/$home_id/zones" -H "Authorization: Bearer ${TOKENS[$account_index]}")
+    # Check zones for open windows
+    local zones=$(curl -s -X GET "https://my.tado.com/api/v2/homes/$home_id/zones" -H "Authorization: Bearer ${TOKENS[$account_index]}")
+    handle_curl_error
+
+    echo "$zones" | jq -c '.[]' | while read -r zone; do
+        local zone_id=$(echo "$zone" | jq -r '.id')
+        local zone_name=$(echo "$zone" | jq -r '.name')
+        local open_window_detection_supported=$(echo "$zone" | jq -r '.openWindowDetection.supported')
+        local open_window_detection_enabled=$(echo "$zone" | jq -r '.openWindowDetection.enabled')
+
+        if [ "$open_window_detection_supported" = "false" ] || [ "$open_window_detection_enabled" = "false" ]; then
+            continue
+        fi
+
+        local open_window_detected=$(curl -s -X GET "https://my.tado.com/api/v2/homes/$home_id/zones/$zone_id/state" -H "Authorization: Bearer ${TOKENS[$account_index]}" | jq -r '.openWindowDetected')
         handle_curl_error
-
-        echo "$zones" | jq -c '.[]' | while read -r zone; do
-             zone_id=$(echo "$zone" | jq -r '.id')
-             zone_name=$(echo "$zone" | jq -r '.name')
-
-             open_window_detection_supported=$(echo "$zone" | jq -r '.openWindowDetection.supported')
-            if [ "$open_window_detection_supported" = false ]; then
-                continue
-            fi
-
-            open_window_detection_enabled=$(echo "$zone" | jq -r '.openWindowDetection.enabled')
-            if [ "$open_window_detection_enabled" = false ]; then
-                continue
-            fi
-
-            open_window_detected=$(curl -s -X GET "https://my.tado.com/api/v2/homes/$home_id/zones/$zone_id/state" -H "Authorization: Bearer ${TOKENS[$account_index]}" | jq -r '.openWindowDetected')
-            handle_curl_error
 
             if [ "$open_window_detected" == "true" ]; then
                 current_time=$(date +%s)
@@ -205,8 +201,6 @@ homeState() {
 
 # Main execution loop
 for (( i=1; i<=NUM_ACCOUNTS; i++ )); do
-    USERNAME_VAR="TADO_USERNAME_$i"
-    PASSWORD_VAR="TADO_PASSWORD_$i"
     CHECKING_INTERVAL_VAR="CHECKING_INTERVAL_$i"
     MAX_OPEN_WINDOW_DURATION_VAR="MAX_OPEN_WINDOW_DURATION_$i"
     ENABLE_GEOFENCING_VAR="ENABLE_GEOFENCING_$i"
@@ -220,12 +214,13 @@ for (( i=1; i<=NUM_ACCOUNTS; i++ )); do
     ENABLE_LOG=${!ENABLE_LOG_VAR:-false}
     LOG_FILE=${!LOG_FILE_VAR:-'/var/log/tado-assistant.log'}
 
-    # Login and get the home ID
-    login "$i" "$USERNAME_VAR" "$PASSWORD_VAR"
+    login "$i"
 
     # Loop to monitor home state
     while true; do
         homeState "$i"
         sleep "$CHECKING_INTERVAL"
-    done
+    done &
 done
+
+wait

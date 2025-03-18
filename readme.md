@@ -60,7 +60,9 @@ logos mentioned are the property of their respective owners. Please use this sof
 During the installation, the script will:
 
 - Set up the required dependencies.
-- Prompt you for your Tado credentials and other optional configurations.
+- Initiate a device code flow authentication for each Tado account:  
+  You will be prompted to visit a verification URL and enter a user code in your browser. Once you complete this process, the installer automatically retrieves and stores a refresh token for each account.
+- Configure additional settings, including setting the checking interval and the maximum duration for the 'Open Window' detection feature.
 - Initialize `tado-assistant.sh` as a background service.
 - Introduce a new configuration option for the 'Open Window' feature. You will be prompted to enter the maximum
   duration (in seconds) that the system should wait before resuming normal operation after an open window is detected.
@@ -68,9 +70,7 @@ During the installation, the script will:
 
 ## 🐳 Docker Installation
 
-Tado Assistant can now be run as a Docker container with support for multiple accounts, making it platform-independent
-and simplifying the setup process for users with multiple Tado devices. Here's how you can get it up and running with
-Docker:
+Tado Assistant can now be run as a Docker container in interactive mode to accommodate the device code flow authentication.
 
 1. **Pull the Docker Image:**
    Pull the latest version of Tado Assistant from Docker Hub:
@@ -79,33 +79,14 @@ Docker:
    docker pull brainic/tado-assistant
    ```
 
-2. **Run the Docker Container:**
-   After pulling the image, you can run Tado Assistant in a Docker container, specifying environment variables for each
-   account you wish to manage. Replace `<LOG_FILE_PATH_n>` with your desired log file path for each account if you want
-   to
-   specify a custom one.
+2. **Run the Docker Container in Interactive Mode:**
 
+   This mode allows you to complete the device code flow authentication during container startup. Run the container with an interactive terminal:
    ```bash
-   docker run -d --name tado-assistant \
-           -e NUM_ACCOUNTS=2 \
-           -e TADO_USERNAME_1='your_username_1' \
-           -e TADO_PASSWORD_1='your_password_1' \
-           -e CHECKING_INTERVAL_1=15 \
-           -e ENABLE_GEOFENCING_1=true \
-           -e ENABLE_LOG_1=true \
-           -e LOG_FILE_1=<LOG_FILE_PATH_1> \
-           -e MAX_OPEN_WINDOW_DURATION_1= \
-           -e TADO_USERNAME_2='your_username_2' \
-           -e TADO_PASSWORD_2='your_password_2' \
-           -e CHECKING_INTERVAL_2=15 \
-           -e ENABLE_GEOFENCING_2=true \
-           -e ENABLE_LOG_2=true \
-           -e LOG_FILE_2=<LOG_FILE_PATH_2> \
-           -e MAX_OPEN_WINDOW_DURATION_2= \
-           brainic/tado-assistant
+       docker run -it --name tado-assistant -e NUM_ACCOUNTS=1 brainic/tado-assistant
    ```
 
-   Note: Adjust the environment variables according to the number of accounts and your specific needs.
+   When running interactively, the container will prompt you to authenticate each Tado account via the device code flow. Follow the on-screen instructions to complete the process. Once the authentication and configuration are complete, you can detach from the container (using Ctrl+P followed by Ctrl+Q) or stop the container if needed.
 
 3. **Docker Logs:**
    To check the logs of your Tado Assistant Docker container, use:
@@ -162,15 +143,15 @@ To ensure you're running the latest version of Tado Assistant, follow these step
 
 ## 🔧 Configuration
 
-The Tado Assistant can be configured to handle multiple Tado accounts, with each account having its own set of
-environment variables:
+Tado Assistant can be configured to handle multiple Tado accounts using a device code flow authentication mechanism. 
+During installation, a refresh token is generated for each account. 
+The following environment variables are stored in `/etc/tado-assistant.env`:
 
 - `NUM_ACCOUNTS`: Number of Tado accounts you wish to manage. This should be set to the total number of accounts.
 
-For each account (replace 'n' with the account number, e.g., 1, 2, 3, ...):
+For each account (replace `n` with the account number, e.g., 1, 2, 3, ...):
 
-- `TADO_USERNAME_n`: Your Tado account username for the nth account.
-- `TADO_PASSWORD_n`: Your Tado account password for the nth account.
+- `TADO_REFRESH_TOKEN_n`: The refresh token obtained via the device code flow authentication for the nth account.
 - `CHECKING_INTERVAL_n`: Frequency (in seconds) for home state checks for the nth account. Default is every 15 seconds.
 - `ENABLE_GEOFENCING_n`: Toggle geofencing check for the nth account. Values: `true` or `false`. Default is `true`.
 - `ENABLE_LOG_n`: Toggle logging for the nth account. Values: `true` or `false`. Default is `false`.
@@ -178,8 +159,7 @@ For each account (replace 'n' with the account number, e.g., 1, 2, 3, ...):
 - `MAX_OPEN_WINDOW_DURATION_n`: Define the maximum duration (in seconds) for the 'Open Window' detection feature to be
   active for the nth account. Leave this field empty to use the default duration set in the Tado app.
 
-These variables are stored in `/etc/tado-assistant.env`. Feel free to tweak them directly if needed. Ensure to adjust
-the variable suffix 'n' to match the corresponding account number.
+Feel free to tweak these variables directly if needed. Ensure to adjust the variable suffix `n` to match the corresponding account number.
 
 ## 🔄 Usage
 
