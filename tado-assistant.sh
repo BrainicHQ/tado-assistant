@@ -46,30 +46,46 @@ login() {
     local refresh_token_var="TADO_REFRESH_TOKEN_$account_index"
     local refresh_token="${!refresh_token_var}"
     local token_response expires_in new_refresh_token home_data home_id
+    local retry_count=0
 
-    token_response=$(curl -s -X POST "https://login.tado.com/oauth2/token" \
-        -d "client_id=1bb50063-6b0c-4d11-bd99-387f4a91cc46" \
-        -d "grant_type=refresh_token" \
-        -d "refresh_token=$refresh_token")
+    while [ $retry_count -lt 3 ]; do
+        token_response=$(curl -s -X POST "https://login.tado.com/oauth2/token" \
+            -d "client_id=1bb50063-6b0c-4d11-bd99-387f4a91cc46" \
+            -d "grant_type=refresh_token" \
+            -d "refresh_token=$refresh_token")
 
-    if ! handle_curl_error; then
-        log_message "❌ Curl error during token refresh for account $account_index. Retrying later."
-        return 1
-    fi
+        if ! handle_curl_error; then
+            log_message "❌ Curl error during token refresh for account $account_index. Retrying later."
+            return 1
+        fi
 
-    local access_token=$(echo "$token_response" | jq -r '.access_token')
-    new_refresh_token=$(echo "$token_response" | jq -r '.refresh_token')
+        local access_token=$(echo "$token_response" | jq -r '.access_token')
+        new_refresh_token=$(echo "$token_response" | jq -r '.refresh_token')
+
+        # Retain existing refresh token if none provided
+        if [[ -z "$new_refresh_token" || "$new_refresh_token" == "null" ]]; then
+            new_refresh_token="$refresh_token"
+        fi
+
+        if [ -n "$access_token" ] && [ "$access_token" != "null" ]; then
+            break
+        fi
+
+        log_message "❌ Refresh token error for account $account_index (Attempt $((retry_count+1))/3)"
+        sleep 30
+        retry_count=$((retry_count+1))
+    done
 
     if [ -z "$access_token" ] || [ "$access_token" == "null" ]; then
-        log_message "❌ Refresh token error for account $account_index: Failed to obtain new access token. Retrying in 30 seconds..."
-        sleep 30
-        login "$account_index"
-        return
+        log_message "🛑 FATAL: Token refresh failed after 3 attempts for account $account_index"
+        exit 1
     fi
 
-    # Update environment file with new refresh token
-    local escaped_new_refresh_token=$(printf "%s" "$new_refresh_token" | sed "s/'/'\\\\''/g")
-    sed -i "s/^export TADO_REFRESH_TOKEN_${account_index}='.*'/export TADO_REFRESH_TOKEN_${account_index}='${escaped_new_refresh_token}'/" /etc/tado-assistant.env
+    # Update environment file only if token changed
+    if [ "$new_refresh_token" != "$refresh_token" ]; then
+        escaped_new_refresh_token=$(printf "%s" "$new_refresh_token" | sed "s/'/'\\\\''/g")
+        sed -i'' "s/^export TADO_REFRESH_TOKEN_${account_index}='.*'/export TADO_REFRESH_TOKEN_${account_index}='${escaped_new_refresh_token}'/" /etc/tado-assistant.env
+    fi
 
     # Update in-memory environment variable
     declare "TADO_REFRESH_TOKEN_${account_index}=$new_refresh_token"
