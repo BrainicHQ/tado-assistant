@@ -61,8 +61,10 @@ login() {
     new_refresh_token=$(echo "$token_response" | jq -r '.refresh_token')
 
     if [ -z "$access_token" ] || [ "$access_token" == "null" ]; then
-        log_message "❌ Refresh token error for account $account_index: Failed to obtain new access token."
-        exit 1
+        log_message "❌ Refresh token error for account $account_index: Failed to obtain new access token. Retrying in 30 seconds..."
+        sleep 30
+        login "$account_index"
+        return
     fi
 
     # Update environment file with new refresh token

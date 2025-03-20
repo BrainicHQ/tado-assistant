@@ -83,7 +83,7 @@ Tado Assistant can now be run as a Docker container in interactive mode to accom
 
    This mode allows you to complete the device code flow authentication during container startup. Run the container with an interactive terminal:
    ```bash
-   docker run -it --name tado-assistant -e NUM_ACCOUNTS=1 brainic/tado-assistant
+   docker run -it --name tado-assistant --restart=always -e NUM_ACCOUNTS=1 brainic/tado-assistant
    ```
 
    When running interactively, the container will prompt you to authenticate each Tado account via the device code flow. Follow the on-screen instructions to complete the process. Once the authentication and configuration are complete, you can detach from the container (using Ctrl+P followed by Ctrl+Q) or stop the container if needed.
