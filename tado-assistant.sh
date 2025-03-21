@@ -85,6 +85,7 @@ login() {
     if [ "$new_refresh_token" != "$refresh_token" ]; then
         escaped_new_refresh_token=$(printf "%s" "$new_refresh_token" | sed "s/'/'\\\\''/g")
         sed -i'' "s/^export TADO_REFRESH_TOKEN_${account_index}='.*'/export TADO_REFRESH_TOKEN_${account_index}='${escaped_new_refresh_token}'/" /etc/tado-assistant.env
+        source /etc/tado-assistant.env # Reload the environment variables
     fi
 
     # Update in-memory environment variable
