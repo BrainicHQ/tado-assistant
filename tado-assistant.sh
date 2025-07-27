@@ -133,8 +133,13 @@ homeState() {
     local mobile_devices=$(curl -s -X GET "https://my.tado.com/api/v2/homes/$home_id/mobileDevices" -H "Authorization: Bearer ${TOKENS[$account_index]}")
     handle_curl_error
 
-    mapfile -t devices_home < <(echo "$mobile_devices" | jq -r '.[] | select(.settings.geoTrackingEnabled == true and .location.atHome == true) | .name')
-    handle_curl_error
+    # Check if mobile_devices is a valid array and not empty
+    if echo "$mobile_devices" | jq -e 'type == "array" and length > 0' >/dev/null 2>&1; then
+        mapfile -t devices_home < <(echo "$mobile_devices" | jq -r '.[] | select(.settings.geoTrackingEnabled == true and .location.atHome == true) | .name')
+        handle_curl_error
+    else
+        devices_home=()
+    fi
 
     if [ "$ENABLE_GEOFENCING" == true ]; then
       log_message "🏠 Account $account_index: Geofencing enabled."
@@ -170,11 +175,13 @@ homeState() {
     local zones=$(curl -s -X GET "https://my.tado.com/api/v2/homes/$home_id/zones" -H "Authorization: Bearer ${TOKENS[$account_index]}")
     handle_curl_error
 
-    echo "$zones" | jq -c '.[]' | while read -r zone; do
-        local zone_id=$(echo "$zone" | jq -r '.id')
-        local zone_name=$(echo "$zone" | jq -r '.name')
-        local open_window_detection_supported=$(echo "$zone" | jq -r '.openWindowDetection.supported')
-        local open_window_detection_enabled=$(echo "$zone" | jq -r '.openWindowDetection.enabled')
+    # Check if zones is a valid array and not empty
+    if echo "$zones" | jq -e 'type == "array" and length > 0' >/dev/null 2>&1; then
+        echo "$zones" | jq -c '.[]' | while read -r zone; do
+            local zone_id=$(echo "$zone" | jq -r '.id')
+            local zone_name=$(echo "$zone" | jq -r '.name')
+            local open_window_detection_supported=$(echo "$zone" | jq -r '.openWindowDetection.supported')
+            local open_window_detection_enabled=$(echo "$zone" | jq -r '.openWindowDetection.enabled')
 
         if [ "$open_window_detection_supported" = "false" ] || [ "$open_window_detection_enabled" = "false" ]; then
             continue
@@ -214,6 +221,7 @@ homeState() {
                 OPEN_WINDOW_ACTIVATION_TIMES[$zone_id]=$current_time
             fi
         done
+    fi
 
         log_message "⏳ Account $account_index: Waiting for a change in devices location or for an open window.."
     }
