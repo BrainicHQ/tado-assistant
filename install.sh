@@ -77,7 +77,83 @@ install_dependencies() {
     fi
 }
 
-# 2. Set Environment Variables with Device Code Flow
+docker_available() {
+    command -v docker &> /dev/null
+}
+
+docker_running() {
+    docker info &> /dev/null
+}
+
+docker_container_exists() {
+    local name="$1"
+    docker ps -a --filter "name=^/${name}$" --format '{{.Names}}' | grep -qx "$name"
+}
+
+docker_container_port() {
+    local name="$1"
+    docker port "$name" 8080/tcp 2>/dev/null | head -n1 | awk -F: '{print $NF}'
+}
+
+setup_proxy_container() {
+    local account_index=$1
+    local proxy_name="tado-api-proxy-${account_index}"
+    local proxy_data_root="/var/lib/tado-api-proxy"
+    local proxy_data_dir="${proxy_data_root}/account${account_index}"
+    local proxy_env_dir="/etc/tado-api-proxy"
+    local proxy_env_file="${proxy_env_dir}/account${account_index}.env"
+    local default_port=$((8080 + account_index - 1))
+    local host_port=""
+    local base_url=""
+    local email=""
+    local password=""
+
+    if docker_container_exists "$proxy_name"; then
+        read -rp "Proxy container ${proxy_name} already exists. Recreate? (true/false, default: false): " RECREATE_PROXY
+        RECREATE_PROXY=${RECREATE_PROXY:-false}
+        if [ "$RECREATE_PROXY" != "true" ]; then
+            docker start "$proxy_name" &> /dev/null || true
+            host_port=$(docker_container_port "$proxy_name")
+            if [ -n "$host_port" ]; then
+                echo "http://localhost:${host_port}"
+                return 0
+            fi
+            echo "Could not detect port mapping for ${proxy_name}."
+            read -rp "Enter tado-api-proxy base URL for account ${account_index} (default: http://localhost:${default_port}): " base_url
+            base_url=${base_url:-http://localhost:${default_port}}
+            echo "$base_url"
+            return 0
+        fi
+        docker rm -f "$proxy_name" &> /dev/null
+    fi
+
+    read -rp "Enter tado account email for account ${account_index}: " email
+    read -rsp "Enter tado account password for account ${account_index}: " password
+    printf "\n"
+    read -rp "Enter proxy host port for account ${account_index} (default: ${default_port}): " host_port
+    host_port=${host_port:-$default_port}
+
+    mkdir -p "$proxy_data_dir" "$proxy_env_dir"
+    chown -R 1000:1000 "$proxy_data_dir"
+
+    printf "EMAIL=%s\nPASSWORD=%s\n" "$email" "$password" > "$proxy_env_file"
+    chmod 600 "$proxy_env_file"
+
+    if ! docker run -d \
+        --name "$proxy_name" \
+        --restart unless-stopped \
+        -p "${host_port}:8080" \
+        -v "${proxy_data_dir}:/config" \
+        --env-file "$proxy_env_file" \
+        ghcr.io/s1adem4n/tado-api-proxy:latest; then
+        echo "Failed to start ${proxy_name}. Please check Docker and try again."
+        return 1
+    fi
+
+    echo "http://localhost:${host_port}"
+}
+
+# 2. Set Environment Variables (tado-api-proxy)
 set_env_variables() {
     echo "Setting up environment variables for multiple Tado accounts..."
 
@@ -87,59 +163,33 @@ set_env_variables() {
     # Initialize the env file with NUM_ACCOUNTS
     echo "export NUM_ACCOUNTS=$NUM_ACCOUNTS" > /etc/tado-assistant.env
 
+    local auto_setup_proxy=false
+    if docker_available; then
+        if docker_running; then
+            read -rp "Auto-setup tado-api-proxy containers with Docker? (true/false, default: true): " auto_setup_proxy
+            auto_setup_proxy=${auto_setup_proxy:-true}
+        else
+            echo "Docker is installed but the daemon is not running. Skipping auto-setup."
+        fi
+    else
+        echo "Docker is not available. Skipping auto-setup."
+    fi
+
     # Loop through each account for configuration
     i=1
     while [ "$i" -le "$NUM_ACCOUNTS" ]; do
         echo "Configuring account $i..."
 
-        response=$(curl -s -X POST "https://login.tado.com/oauth2/device_authorize" \
-            -d "client_id=1bb50063-6b0c-4d11-bd99-387f4a91cc46" \
-            -d "scope=offline_access")
-        if [ $? -ne 0 ]; then
-            echo "Failed to initiate device code flow."
-            exit 1
-        fi
-
-        device_code=$(echo "$response" | jq -r '.device_code')
-        user_code=$(echo "$response" | jq -r '.user_code')
-        verification_uri_complete=$(echo "$response" | jq -r '.verification_uri_complete')
-        interval=$(echo "$response" | jq -r '.interval')
-        expires_in=$(echo "$response" | jq -r '.expires_in')
-
-        if [ -z "$device_code" ] || [ "$device_code" == "null" ]; then
-            echo "Error: Failed to retrieve device code."
-            exit 1
-        fi
-
-        echo "Please visit in your browser: $verification_uri_complete"
-        echo "User code: $user_code"
-        echo "Waiting for authentication..."
-
-        start_time=$(date +%s)
-        while true; do
-            current_time=$(date +%s)
-            if (( current_time - start_time > expires_in )); then
-                echo "Authentication timed out."
+        if [ "$auto_setup_proxy" == "true" ]; then
+            API_BASE_URL=$(setup_proxy_container "$i") || exit 1
+            if [ -z "$API_BASE_URL" ]; then
+                echo "No proxy base URL provided for account $i."
                 exit 1
             fi
-
-            token_response=$(curl -s -X POST "https://login.tado.com/oauth2/token" \
-                -d "client_id=1bb50063-6b0c-4d11-bd99-387f4a91cc46" \
-                -d "device_code=$device_code" \
-                -d "grant_type=urn:ietf:params:oauth:grant-type:device_code")
-
-            error=$(echo "$token_response" | jq -r '.error // empty')
-            if [ "$error" == "authorization_pending" ]; then
-                sleep "$interval"
-                continue
-            elif [ -n "$error" ]; then
-                echo "Error: $error"
-                exit 1
-            else
-                refresh_token=$(echo "$token_response" | jq -r '.refresh_token')
-                break
-            fi
-        done
+        else
+            read -rp "Enter tado-api-proxy base URL for account $i (default: http://localhost:8080): " API_BASE_URL
+            API_BASE_URL=${API_BASE_URL:-http://localhost:8080}
+        fi
 
         read -rp "Enter CHECKING_INTERVAL for account $i (default: 15): " CHECKING_INTERVAL
         read -rp "Enter MAX_OPEN_WINDOW_DURATION for account $i (in seconds): " MAX_OPEN_WINDOW_DURATION
@@ -147,9 +197,9 @@ set_env_variables() {
         read -rp "Enable log for account $i? (true/false, default: false): " ENABLE_LOG
         read -rp "Enter log file path for account $i (default: /var/log/tado-assistant.log): " LOG_FILE
 
-        escaped_refresh_token=$(printf '%s' "$refresh_token" | sed "s/'/'\\\\''/g")
+        escaped_api_base_url=$(printf '%s' "$API_BASE_URL" | sed "s/'/'\\\\''/g")
         {
-            echo "export TADO_REFRESH_TOKEN_$i='$escaped_refresh_token'"
+            echo "export TADO_API_BASE_URL_$i='$escaped_api_base_url'"
             echo "export CHECKING_INTERVAL_$i='${CHECKING_INTERVAL:-15}'"
             echo "export MAX_OPEN_WINDOW_DURATION_$i='${MAX_OPEN_WINDOW_DURATION:-}'"
             echo "export ENABLE_GEOFENCING_$i='${ENABLE_GEOFENCING:-true}'"

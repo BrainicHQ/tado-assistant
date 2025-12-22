@@ -31,6 +31,7 @@ logos mentioned are the property of their respective owners. Please use this sof
 - `git` installed to clone the repository.
 - Root or sudo privileges for the installation script.
 - `curl` and `jq` (Don't worry, our installer will help you set these up if they're not present).
+- Docker (optional) if you want the installer to auto-start tado-api-proxy.
 - Ensure both scripts (`install.sh` and `tado-assistant.sh`) reside in the same directory.
 
 ## 📥 Installation
@@ -60,9 +61,8 @@ logos mentioned are the property of their respective owners. Please use this sof
 During the installation, the script will:
 
 - Set up the required dependencies.
-- Initiate a device code flow authentication for each Tado account:  
-  You will be prompted to visit a verification URL and enter a user code in your browser. Once you complete this process, the installer automatically retrieves and stores a refresh token for each account.
 - Configure additional settings, including setting the checking interval and the maximum duration for the 'Open Window' detection feature.
+- Optionally auto-start tado-api-proxy containers (when Docker is available) and configure a base URL per account.
 - Initialize `tado-assistant.sh` as a background service.
 - Introduce a new configuration option for the 'Open Window' feature. You will be prompted to enter the maximum
   duration (in seconds) that the system should wait before resuming normal operation after an open window is detected.
@@ -70,7 +70,7 @@ During the installation, the script will:
 
 ## 🐳 Docker Installation
 
-Tado Assistant can now be run as a Docker container in interactive mode to accommodate the device code flow authentication.
+Tado Assistant can run as a Docker container in interactive mode to configure accounts and connect to your proxy.
 
 1. **Pull the Docker Image:**
    Pull the latest version of Tado Assistant from Docker Hub:
@@ -81,12 +81,12 @@ Tado Assistant can now be run as a Docker container in interactive mode to accom
 
 2. **Run the Docker Container in Interactive Mode:**
 
-   This mode allows you to complete the device code flow authentication during container startup. Run the container with an interactive terminal:
+   Run the container with an interactive terminal so you can provide the proxy base URL during setup:
    ```bash
    docker run -it --name tado-assistant --restart=always -e NUM_ACCOUNTS=1 brainic/tado-assistant
    ```
 
-   When running interactively, the container will prompt you to authenticate each Tado account via the device code flow. Follow the on-screen instructions to complete the process. Once the authentication and configuration are complete, you can detach from the container (using Ctrl+P followed by Ctrl+Q) or stop the container if needed.
+   Once the configuration is complete, you can detach from the container (using Ctrl+P followed by Ctrl+Q) or stop the container if needed.
 
 3. **Docker Logs:**
    To check the logs of your Tado Assistant Docker container, use:
@@ -105,6 +105,27 @@ Tado Assistant can now be run as a Docker container in interactive mode to accom
 
 This Docker setup offers a straightforward way to deploy Tado Assistant without the need for manual environment setup on
 your host system.
+
+Note: When running Tado Assistant inside Docker, the installer cannot auto-start tado-api-proxy. Run the proxy on the host
+or another machine and point `TADO_API_BASE_URL_n` to it.
+
+## 🔌 tado-api-proxy
+
+To bypass the public API rate limits, Tado Assistant routes all API calls through
+[tado-api-proxy](https://github.com/s1adem4n/tado-api-proxy). The proxy authenticates via the browser OAuth client and
+applies its own access token to each request.
+
+Quick setup overview:
+
+1. Run the proxy (see the repo for Docker and binary instructions), or let `install.sh` start it for you when Docker is available.
+2. Set `TADO_API_BASE_URL_n` to your proxy address (default `http://localhost:8080`).
+3. Restart the Tado Assistant service.
+
+If you run Tado Assistant inside Docker and the proxy is on the host, use `http://host.docker.internal:8080` on
+macOS/Windows or run the container with `--network=host` on Linux.
+
+For multiple accounts, run one proxy per account on different ports and set a different `TADO_API_BASE_URL_n` value for
+each.
 
 ## 🔄 Updating
 
@@ -143,15 +164,18 @@ To ensure you're running the latest version of Tado Assistant, follow these step
 
 ## 🔧 Configuration
 
-Tado Assistant can be configured to handle multiple Tado accounts using a device code flow authentication mechanism. 
-During installation, a refresh token is generated for each account. 
+Tado Assistant relies on tado-api-proxy for authentication and rate-limit bypass. If you use the Docker auto-setup in
+`install.sh`, proxy credentials are stored in `/etc/tado-api-proxy/accountN.env` and token data is stored under
+`/var/lib/tado-api-proxy/accountN`.
 The following environment variables are stored in `/etc/tado-assistant.env`:
 
 - `NUM_ACCOUNTS`: Number of Tado accounts you wish to manage. This should be set to the total number of accounts.
+- `TADO_API_BASE_URL`: Global base URL for Tado API calls (default `http://localhost:8080`). Overridden by
+  `TADO_API_BASE_URL_n` when set.
 
 For each account (replace `n` with the account number, e.g., 1, 2, 3, ...):
 
-- `TADO_REFRESH_TOKEN_n`: The refresh token obtained via the device code flow authentication for the nth account.
+- `TADO_API_BASE_URL_n`: Base URL for Tado API calls. Default is `http://localhost:8080`.
 - `CHECKING_INTERVAL_n`: Frequency (in seconds) for home state checks for the nth account. Default is every 15 seconds.
 - `ENABLE_GEOFENCING_n`: Toggle geofencing check for the nth account. Values: `true` or `false`. Default is `true`.
 - `ENABLE_LOG_n`: Toggle logging for the nth account. Values: `true` or `false`. Default is `false`.
