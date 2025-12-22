@@ -6,6 +6,12 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
+DOCKER_USER=""
+DOCKER_BIN=""
+if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
+    DOCKER_USER="$SUDO_USER"
+fi
+
 # 1. Install Dependencies
 install_dependencies() {
     echo "Installing dependencies..."
@@ -77,22 +83,53 @@ install_dependencies() {
     fi
 }
 
+detect_docker_bin() {
+    if [ -n "$DOCKER_BIN" ]; then
+        return 0
+    fi
+
+    local bin=""
+    bin=$(command -v docker 2>/dev/null) || true
+    if [ -n "$bin" ]; then
+        DOCKER_BIN="$bin"
+        return 0
+    fi
+
+    for candidate in /usr/local/bin/docker /opt/homebrew/bin/docker /usr/bin/docker; do
+        if [ -x "$candidate" ]; then
+            DOCKER_BIN="$candidate"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+docker_cmd() {
+    detect_docker_bin || return 1
+    if [ -n "$DOCKER_USER" ] && [ "$DOCKER_USER" != "root" ]; then
+        sudo -u "$DOCKER_USER" -H "$DOCKER_BIN" "$@"
+    else
+        "$DOCKER_BIN" "$@"
+    fi
+}
+
 docker_available() {
-    command -v docker &> /dev/null
+    detect_docker_bin
 }
 
 docker_running() {
-    docker info &> /dev/null
+    docker_cmd info &> /dev/null
 }
 
 docker_container_exists() {
     local name="$1"
-    docker ps -a --filter "name=^/${name}$" --format '{{.Names}}' | grep -qx "$name"
+    docker_cmd ps -a --filter "name=^/${name}$" --format '{{.Names}}' | grep -qx "$name"
 }
 
 docker_container_port() {
     local name="$1"
-    docker port "$name" 8080/tcp 2>/dev/null | head -n1 | awk -F: '{print $NF}'
+    docker_cmd port "$name" 8080/tcp 2>/dev/null | head -n1 | awk -F: '{print $NF}'
 }
 
 setup_proxy_container() {
@@ -112,7 +149,7 @@ setup_proxy_container() {
         read -rp "Proxy container ${proxy_name} already exists. Recreate? (true/false, default: false): " RECREATE_PROXY
         RECREATE_PROXY=${RECREATE_PROXY:-false}
         if [ "$RECREATE_PROXY" != "true" ]; then
-            docker start "$proxy_name" &> /dev/null || true
+            docker_cmd start "$proxy_name" &> /dev/null || true
             host_port=$(docker_container_port "$proxy_name")
             if [ -n "$host_port" ]; then
                 echo "http://localhost:${host_port}"
@@ -124,7 +161,7 @@ setup_proxy_container() {
             echo "$base_url"
             return 0
         fi
-        docker rm -f "$proxy_name" &> /dev/null
+        docker_cmd rm -f "$proxy_name" &> /dev/null
     fi
 
     read -rp "Enter tado account email for account ${account_index}: " email
@@ -139,7 +176,7 @@ setup_proxy_container() {
     printf "EMAIL=%s\nPASSWORD=%s\n" "$email" "$password" > "$proxy_env_file"
     chmod 600 "$proxy_env_file"
 
-    if ! docker run -d \
+    if ! docker_cmd run -d \
         --name "$proxy_name" \
         --restart unless-stopped \
         -p "${host_port}:8080" \
