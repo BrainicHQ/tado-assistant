@@ -300,6 +300,16 @@ detect_chrome_executable() {
     return 1
 }
 
+in_container() {
+    if [ -f /.dockerenv ]; then
+        return 0
+    fi
+    if [ -r /proc/1/cgroup ] && grep -qE '(docker|lxc|containerd|kubepods)' /proc/1/cgroup; then
+        return 0
+    fi
+    return 1
+}
+
 setup_systemd_proxy_service() {
     local service_file="/etc/systemd/system/tado-api-proxy@.service"
 
@@ -381,7 +391,11 @@ setup_proxy_binary() {
     printf "\n" >&2
     read -rp "Enter proxy host port for account ${account_index} (default: ${default_port}): " host_port
     host_port=${host_port:-$default_port}
-    listen_addr="127.0.0.1:${host_port}"
+    if in_container; then
+        listen_addr="0.0.0.0:${host_port}"
+    else
+        listen_addr="127.0.0.1:${host_port}"
+    fi
 
     mkdir -p "$proxy_data_dir" "$proxy_env_dir"
     chown -R "$ORIGINAL_USER" "$proxy_data_dir"
@@ -519,8 +533,9 @@ setup_service() {
         chmod +x "$SCRIPT_PATH"
     fi
 
-    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        SERVICE_CONTENT="[Unit]
+    if [[ "$OSTYPE" == "linux"* ]]; then
+        if command -v systemctl &> /dev/null && [ -d /run/systemd/system ]; then
+            SERVICE_CONTENT="[Unit]
 Description=Tado Assistant Service
 
 [Service]
@@ -531,10 +546,29 @@ Restart=always
 [Install]
 WantedBy=multi-user.target"
 
-        echo "$SERVICE_CONTENT" > /etc/systemd/system/tado-assistant.service
-        systemctl enable tado-assistant.service
-        systemctl restart tado-assistant.service
+            echo "$SERVICE_CONTENT" > /etc/systemd/system/tado-assistant.service
+            systemctl enable tado-assistant.service
+            systemctl restart tado-assistant.service
+        elif command -v rc-update &> /dev/null && [ -d /etc/init.d ]; then
+            cat <<'EOF' > /etc/init.d/tado-assistant
+#!/sbin/openrc-run
 
+command="/usr/local/bin/tado-assistant.sh"
+command_background="yes"
+pidfile="/run/tado-assistant.pid"
+output_log="/var/log/tado-assistant.log"
+error_log="/var/log/tado-assistant.log"
+
+depend() {
+    need net
+}
+EOF
+            chmod +x /etc/init.d/tado-assistant
+            rc-update add tado-assistant default || true
+            rc-service tado-assistant restart || rc-service tado-assistant start || true
+        else
+            echo "No supported service manager found. Run $SCRIPT_PATH manually or set up your own service."
+        fi
     elif [[ "$OSTYPE" == "darwin"* ]]; then
         LAUNCHD_CONTENT="<?xml version=\"1.0\" encoding=\"UTF-8\"?>
 <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">

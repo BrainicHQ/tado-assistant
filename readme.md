@@ -72,6 +72,9 @@ You will be prompted to enter the maximum duration (in seconds) that the system 
 operation after an open window is detected. You can specify a custom duration or leave it empty to use the default
 duration set in the Tado app.
 
+On Linux without systemd, the installer will register an OpenRC init script when available. If no supported service
+manager is detected, run `/usr/local/bin/tado-assistant.sh` manually or add your own service unit.
+
 ## 🐳 Docker Installation
 
 Tado Assistant can run as a Docker container in interactive mode to configure accounts and connect to your proxy. The
@@ -96,6 +99,7 @@ image already includes tado-api-proxy and a headless Chromium runtime, so no sep
    assistant settings.
 
    If you want to access the proxy docs from your host, add `-p 8080:8080` (and `-p 8081:8081` for additional accounts).
+   In Docker, the proxy listens on `0.0.0.0` so the port mapping is reachable from the host.
 
    Once the configuration is complete, you can detach from the container (using Ctrl+P followed by Ctrl+Q) or stop the
    container if needed.
