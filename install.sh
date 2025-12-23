@@ -378,7 +378,7 @@ setup_proxy_binary() {
 
     read -rp "Enter tado account email for account ${account_index}: " email
     read -rsp "Enter tado account password for account ${account_index}: " password
-    printf "\n"
+    printf "\n" >&2
     read -rp "Enter proxy host port for account ${account_index} (default: ${default_port}): " host_port
     host_port=${host_port:-$default_port}
     listen_addr="127.0.0.1:${host_port}"
