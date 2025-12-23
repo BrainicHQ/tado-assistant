@@ -31,7 +31,7 @@ logos mentioned are the property of their respective owners. Please use this sof
 - `git` installed to clone the repository.
 - Root or sudo privileges for the installation script.
 - `curl` and `jq` (Don't worry, our installer will help you set these up if they're not present).
-- Docker (optional) if you want the installer to auto-start tado-api-proxy.
+- Chrome/Chromium installed (required for the tado-api-proxy binary).
 - Ensure both scripts (`install.sh` and `tado-assistant.sh`) reside in the same directory.
 
 ## 📥 Installation
@@ -62,7 +62,7 @@ During the installation, the script will:
 
 - Set up the required dependencies.
 - Configure additional settings, including setting the checking interval and the maximum duration for the 'Open Window' detection feature.
-- Optionally auto-start tado-api-proxy containers (when Docker is available) and configure a base URL per account.
+- Auto-setup tado-api-proxy (binary) and configure a base URL per account.
 - Initialize `tado-assistant.sh` as a background service.
 - Introduce a new configuration option for the 'Open Window' feature. You will be prompted to enter the maximum
   duration (in seconds) that the system should wait before resuming normal operation after an open window is detected.
@@ -106,8 +106,8 @@ Tado Assistant can run as a Docker container in interactive mode to configure ac
 This Docker setup offers a straightforward way to deploy Tado Assistant without the need for manual environment setup on
 your host system.
 
-Note: When running Tado Assistant inside Docker, the installer cannot auto-start tado-api-proxy. Run the proxy on the host
-or another machine and point `TADO_API_BASE_URL_n` to it.
+Note: When running Tado Assistant inside Docker, the installer downloads the proxy binary and starts it in the container
+alongside the assistant.
 
 ## 🔌 tado-api-proxy
 
@@ -115,14 +115,14 @@ To bypass the public API rate limits, Tado Assistant routes all API calls throug
 [tado-api-proxy](https://github.com/s1adem4n/tado-api-proxy). The proxy authenticates via the browser OAuth client and
 applies its own access token to each request.
 
+When using the binary setup, `install.sh` downloads the proxy to `/usr/local/bin/tado-api-proxy` and manages one service
+per account (`tado-api-proxy@N` on Linux or a LaunchAgent on macOS).
+
 Quick setup overview:
 
-1. Run the proxy (see the repo for Docker and binary instructions), or let `install.sh` start it for you when Docker is available.
-2. Set `TADO_API_BASE_URL_n` to your proxy address (default `http://localhost:8080`).
-3. Restart the Tado Assistant service.
-
-If you run Tado Assistant inside Docker and the proxy is on the host, use `http://host.docker.internal:8080` on
-macOS/Windows or run the container with `--network=host` on Linux.
+1. Let `install.sh` auto-setup the proxy binary.
+2. The installer sets `TADO_API_BASE_URL_n` automatically (default `http://localhost:8080`).
+3. Restart the Tado Assistant service if you change any proxy settings manually.
 
 For multiple accounts, run one proxy per account on different ports and set a different `TADO_API_BASE_URL_n` value for
 each.
@@ -164,9 +164,8 @@ To ensure you're running the latest version of Tado Assistant, follow these step
 
 ## 🔧 Configuration
 
-Tado Assistant relies on tado-api-proxy for authentication and rate-limit bypass. If you use the Docker auto-setup in
-`install.sh`, proxy credentials are stored in `/etc/tado-api-proxy/accountN.env` and token data is stored under
-`/var/lib/tado-api-proxy/accountN`.
+Tado Assistant relies on tado-api-proxy for authentication and rate-limit bypass. Proxy credentials are stored in
+`/etc/tado-api-proxy/accountN.env` and token data is stored under `/var/lib/tado-api-proxy/accountN`.
 The following environment variables are stored in `/etc/tado-assistant.env`:
 
 - `NUM_ACCOUNTS`: Number of Tado accounts you wish to manage. This should be set to the total number of accounts.
@@ -184,6 +183,11 @@ For each account (replace `n` with the account number, e.g., 1, 2, 3, ...):
   active for the nth account. Leave this field empty to use the default duration set in the Tado app.
 
 Feel free to tweak these variables directly if needed. Ensure to adjust the variable suffix `n` to match the corresponding account number.
+
+Optional installer overrides (set before running `install.sh`):
+
+- `TADO_PROXY_CHROME_EXECUTABLE`: Path override to Chrome/Chromium for binary proxy setup.
+- `TADO_API_PROXY_VERSION`: Proxy version tag (for example `v0.2.7`) to pin the binary download.
 
 ## 🔄 Usage
 
@@ -278,7 +282,16 @@ location: `/var/log/tado-assistant.log`) for real-time updates and messages.
 
 ## 🗑️ Uninstallation
 
-Currently, a dedicated uninstallation script is not provided. To manually uninstall:
+You can uninstall using the provided script:
+
+```bash
+sudo ./uninstall.sh
+```
+
+This removes the assistant service, proxy services/containers, and proxy data under `/etc/tado-api-proxy` and
+`/var/lib/tado-api-proxy`.
+
+To manually uninstall:
 
 1. Stop the service.
     - For Linux:
