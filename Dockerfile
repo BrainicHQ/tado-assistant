@@ -1,4 +1,4 @@
-FROM ghcr.io/s1adem4n/tado-api-proxy:latest
+FROM ghcr.io/s1adem4n/tado-api-proxy:main
 
 USER root
 
