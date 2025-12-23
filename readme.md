@@ -108,6 +108,7 @@ your host system.
 
 Note: When running Tado Assistant inside Docker, the installer downloads the proxy binary and starts it in the container
 alongside the assistant.
+On systems without systemd/launchd, Tado Assistant will start the proxy in the background using the per-account env file.
 
 ## 🔌 tado-api-proxy
 

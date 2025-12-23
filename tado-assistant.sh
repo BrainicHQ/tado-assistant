@@ -61,6 +61,56 @@ api_request() {
     curl "${curl_args[@]}" "$url"
 }
 
+is_local_proxy() {
+    local base_url="$1"
+    case "$base_url" in
+        http://localhost*|http://127.0.0.1*)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+ensure_proxy_running() {
+    local account_index=$1
+    local base_url="${API_BASE_URLS[$account_index]}"
+    local env_file="/etc/tado-api-proxy/account${account_index}.env"
+    local log_file="/var/log/tado-api-proxy-account${account_index}.log"
+
+    if command -v systemctl &> /dev/null && [ -d /run/systemd/system ]; then
+        return 0
+    fi
+    if [[ "$OSTYPE" == "darwin"* ]] && command -v launchctl &> /dev/null; then
+        return 0
+    fi
+    if ! is_local_proxy "$base_url"; then
+        return 0
+    fi
+    if [ ! -x /usr/local/bin/tado-api-proxy ]; then
+        log_message "⚠️ Account $account_index: tado-api-proxy binary not found."
+        return 1
+    fi
+    if curl -fsS --max-time 2 "${base_url}/docs" >/dev/null 2>&1; then
+        return 0
+    fi
+    if [ ! -f "$env_file" ]; then
+        log_message "⚠️ Account $account_index: Proxy env file missing at $env_file."
+        return 1
+    fi
+
+    log_message "🔌 Account $account_index: Starting local tado-api-proxy."
+    mkdir -p "$(dirname "$log_file")"
+    (
+        set -a
+        . "$env_file"
+        set +a
+        nohup /usr/local/bin/tado-api-proxy >> "$log_file" 2>&1 &
+    )
+    sleep 1
+}
+
 fetch_home_id() {
     local account_index=$1
     local home_data
@@ -92,6 +142,7 @@ init_account() {
     local account_index=$1
 
     log_message "🔌 Account $account_index: Using tado-api-proxy at ${API_BASE_URLS[$account_index]}"
+    ensure_proxy_running "$account_index"
     fetch_home_id "$account_index"
 }
 
@@ -99,6 +150,8 @@ homeState() {
     local account_index=$1
     local home_id=${HOME_IDS[$account_index]}
     local current_time=$(date +%s)
+
+    ensure_proxy_running "$account_index"
 
     local home_state_response
     home_state_response=$(api_request "$account_index" GET "/api/v2/homes/$home_id/state")
