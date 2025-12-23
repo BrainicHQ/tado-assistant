@@ -320,7 +320,7 @@ WantedBy=multi-user.target
 EOF
     fi
 
-    systemctl daemon-reload
+    systemctl daemon-reload 1>&2
 }
 
 setup_launchd_proxy_service() {
@@ -360,7 +360,7 @@ EOF
 EOF
 
     sudo -u "$ORIGINAL_USER" launchctl unload "$plist_path" &> /dev/null || true
-    sudo -u "$ORIGINAL_USER" launchctl load "$plist_path"
+    sudo -u "$ORIGINAL_USER" launchctl load "$plist_path" 1>&2
 }
 
 setup_proxy_binary() {
@@ -414,7 +414,7 @@ EOF
 
     if command -v systemctl &> /dev/null && [ -d /run/systemd/system ]; then
         setup_systemd_proxy_service
-        systemctl enable --now "tado-api-proxy@${account_index}.service"
+        systemctl enable --now "tado-api-proxy@${account_index}.service" 1>&2
     elif [[ "$OSTYPE" == "darwin"* ]] && command -v launchctl &> /dev/null; then
         setup_launchd_proxy_service "$account_index"
     else
@@ -428,7 +428,7 @@ EOF
         )
     fi
 
-    echo "http://localhost:${host_port}"
+    printf '%s\n' "http://localhost:${host_port}"
 }
 
 # 2. Set Environment Variables (tado-api-proxy)
@@ -462,7 +462,20 @@ set_env_variables() {
     while [ "$i" -le "$NUM_ACCOUNTS" ]; do
         echo "Configuring account $i..."
 
-        API_BASE_URL=$(setup_proxy_binary "$i" "$chrome_executable") || exit 1
+        proxy_output=$(setup_proxy_binary "$i" "$chrome_executable")
+        if [ $? -ne 0 ]; then
+            exit 1
+        fi
+
+        API_BASE_URL=""
+        while IFS= read -r line; do
+            line=${line%$'\r'}
+            case "$line" in
+                http://*|https://*)
+                    API_BASE_URL="$line"
+                    ;;
+            esac
+        done <<< "$proxy_output"
 
         if [ -z "$API_BASE_URL" ]; then
             echo "Failed to configure proxy for account $i."
