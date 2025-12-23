@@ -247,6 +247,11 @@ Optional installer overrides (set before running `install.sh`):
 - `TADO_PROXY_CHROME_EXECUTABLE`: Path override to Chrome/Chromium for binary proxy setup.
 - `TADO_API_PROXY_VERSION`: Proxy version tag (for example `v0.2.7`) to pin the binary download.
 
+Optional runtime overrides (set before running `tado-assistant.sh`):
+
+- `TADO_PROXY_START_BACKOFF`: Minimum seconds between proxy auto-start attempts (default 30).
+- `TADO_PROXY_RUNTIME_DIR`: Directory for proxy PID/lock files (default `/tmp/tado-api-proxy`).
+
 ## 🔄 Usage
 
 After successfully installing the Tado Assistant, it will run silently in the background, ensuring your home's

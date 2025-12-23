@@ -78,6 +78,11 @@ ensure_proxy_running() {
     local base_url="${API_BASE_URLS[$account_index]}"
     local env_file="/etc/tado-api-proxy/account${account_index}.env"
     local log_file="/var/log/tado-api-proxy-account${account_index}.log"
+    local runtime_dir="${TADO_PROXY_RUNTIME_DIR:-/tmp/tado-api-proxy}"
+    local lock_dir="${runtime_dir}/account${account_index}.lock"
+    local pid_file="${runtime_dir}/account${account_index}.pid"
+    local state_file="${runtime_dir}/account${account_index}.last_start"
+    local backoff="${TADO_PROXY_START_BACKOFF:-30}"
 
     if command -v systemctl &> /dev/null && [ -d /run/systemd/system ]; then
         return 0
@@ -100,6 +105,36 @@ ensure_proxy_running() {
         return 1
     fi
 
+    case "$backoff" in
+        ''|*[!0-9]*)
+            backoff=30
+            ;;
+    esac
+
+    mkdir -p "$runtime_dir"
+    if [ -f "$pid_file" ]; then
+        if kill -0 "$(cat "$pid_file" 2>/dev/null)" 2>/dev/null; then
+            return 0
+        fi
+        rm -f "$pid_file"
+    fi
+
+    if ! mkdir "$lock_dir" 2>/dev/null; then
+        return 0
+    fi
+    trap 'rmdir "$lock_dir" 2>/dev/null' RETURN
+
+    local now
+    now=$(date +%s)
+    if [ -f "$state_file" ]; then
+        local last_attempt
+        last_attempt=$(cat "$state_file" 2>/dev/null || true)
+        if [ -n "$last_attempt" ] && [ $((now - last_attempt)) -lt "$backoff" ]; then
+            return 0
+        fi
+    fi
+    printf '%s' "$now" > "$state_file"
+
     log_message "🔌 Account $account_index: Starting local tado-api-proxy."
     mkdir -p "$(dirname "$log_file")"
     (
@@ -107,6 +142,7 @@ ensure_proxy_running() {
         . "$env_file"
         set +a
         nohup /usr/local/bin/tado-api-proxy >> "$log_file" 2>&1 &
+        echo $! > "$pid_file"
     )
     sleep 1
 }
