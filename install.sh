@@ -483,7 +483,7 @@ set_env_variables() {
         fi
 
         read -rp "Enter CHECKING_INTERVAL for account $i (default: 15): " CHECKING_INTERVAL
-        read -rp "Enter MAX_OPEN_WINDOW_DURATION for account $i (in seconds): " MAX_OPEN_WINDOW_DURATION
+        read -rp "Enter MAX_OPEN_WINDOW_DURATION for account $i (in seconds, leave empty to use the Tado app default): " MAX_OPEN_WINDOW_DURATION
         read -rp "Enable geofencing check for account $i? (true/false, default: true): " ENABLE_GEOFENCING
         read -rp "Enable log for account $i? (true/false, default: false): " ENABLE_LOG
         read -rp "Enter log file path for account $i (default: /var/log/tado-assistant.log): " LOG_FILE
