@@ -6,6 +6,13 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
+ORIGINAL_USER="${SUDO_USER:-$(whoami)}"
+ORIGINAL_HOME=$(eval echo "~${ORIGINAL_USER}" 2>/dev/null)
+if [ -z "$ORIGINAL_HOME" ] || [ "$ORIGINAL_HOME" == "~${ORIGINAL_USER}" ]; then
+    ORIGINAL_HOME="/root"
+fi
+
+
 # 1. Install Dependencies
 install_dependencies() {
     echo "Installing dependencies..."
@@ -77,7 +84,368 @@ install_dependencies() {
     fi
 }
 
-# 2. Set Environment Variables with Device Code Flow
+escape_squote() {
+    printf "%s" "$1" | sed "s/'/'\\\\''/g"
+}
+
+proxy_platform_supported() {
+    local os
+    local arch
+
+    os=$(uname -s)
+    case "$os" in
+        Linux) PROXY_OS="linux" ;;
+        Darwin) PROXY_OS="darwin" ;;
+        *) return 1 ;;
+    esac
+
+    arch=$(uname -m)
+    case "$arch" in
+        x86_64|amd64) PROXY_ARCH="x86_64" ;;
+        arm64|aarch64) PROXY_ARCH="arm64" ;;
+        i386|i686) PROXY_ARCH="i386" ;;
+        *) return 1 ;;
+    esac
+
+    return 0
+}
+
+proxy_asset_name() {
+    echo "tado-api-proxy_${PROXY_OS}_${PROXY_ARCH}.tar.gz"
+}
+
+get_latest_proxy_version() {
+    if [ -n "$TADO_API_PROXY_VERSION" ]; then
+        echo "$TADO_API_PROXY_VERSION"
+        return 0
+    fi
+
+    local version
+    version=$(curl -fsSL https://api.github.com/repos/s1adem4n/tado-api-proxy/releases/latest | jq -r '.tag_name')
+    if [ -z "$version" ] || [ "$version" = "null" ]; then
+        return 1
+    fi
+    echo "$version"
+}
+
+verify_proxy_checksum() {
+    local version="$1"
+    local asset="$2"
+    local file_path="$3"
+    local version_no_v="${version#v}"
+    local checksum_url="https://github.com/s1adem4n/tado-api-proxy/releases/download/${version}/tado-api-proxy_${version_no_v}_checksums.txt"
+    local checksum_file=""
+    local expected=""
+    local actual=""
+
+    if command -v sha256sum &> /dev/null; then
+        checksum_file=$(mktemp)
+        curl -fsSL "$checksum_url" -o "$checksum_file" || rm -f "$checksum_file"
+        if [ -f "$checksum_file" ]; then
+            expected=$(grep " ${asset}$" "$checksum_file" | awk '{print $1}')
+            rm -f "$checksum_file"
+            if [ -n "$expected" ]; then
+                actual=$(sha256sum "$file_path" | awk '{print $1}')
+            fi
+        fi
+    elif command -v shasum &> /dev/null; then
+        checksum_file=$(mktemp)
+        curl -fsSL "$checksum_url" -o "$checksum_file" || rm -f "$checksum_file"
+        if [ -f "$checksum_file" ]; then
+            expected=$(grep " ${asset}$" "$checksum_file" | awk '{print $1}')
+            rm -f "$checksum_file"
+            if [ -n "$expected" ]; then
+                actual=$(shasum -a 256 "$file_path" | awk '{print $1}')
+            fi
+        fi
+    fi
+
+    if [ -n "$expected" ] && [ -n "$actual" ] && [ "$expected" != "$actual" ]; then
+        echo "Checksum verification failed for ${asset}."
+        return 1
+    fi
+
+    return 0
+}
+
+download_proxy_binary() {
+    proxy_platform_supported || return 1
+
+    local version
+    local asset
+    local url
+    local tmpdir
+    local bin_path
+
+    version=$(get_latest_proxy_version) || return 1
+    asset=$(proxy_asset_name)
+    url="https://github.com/s1adem4n/tado-api-proxy/releases/download/${version}/${asset}"
+    tmpdir=$(mktemp -d)
+
+    if ! curl -fsSL "$url" -o "${tmpdir}/${asset}"; then
+        rm -rf "$tmpdir"
+        return 1
+    fi
+
+    if ! verify_proxy_checksum "$version" "$asset" "${tmpdir}/${asset}"; then
+        rm -rf "$tmpdir"
+        return 1
+    fi
+
+    if ! tar -xzf "${tmpdir}/${asset}" -C "$tmpdir"; then
+        rm -rf "$tmpdir"
+        return 1
+    fi
+
+    bin_path=$(find "$tmpdir" -maxdepth 2 -type f -name "tado-api-proxy" | head -n1)
+    if [ -z "$bin_path" ]; then
+        rm -rf "$tmpdir"
+        return 1
+    fi
+
+    cp "$bin_path" /usr/local/bin/tado-api-proxy
+    chmod 755 /usr/local/bin/tado-api-proxy
+    rm -rf "$tmpdir"
+    return 0
+}
+
+ensure_proxy_binary() {
+    if [ -x /usr/local/bin/tado-api-proxy ]; then
+        return 0
+    fi
+
+    echo "Downloading tado-api-proxy binary..."
+    download_proxy_binary
+}
+
+install_chromium_linux() {
+    local distro=""
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        distro=$ID
+    fi
+
+    echo "Installing Chromium (this may take a few minutes)..."
+
+    case $distro in
+        debian|ubuntu|raspbian)
+            DEBIAN_FRONTEND=noninteractive apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends chromium || \
+                DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends chromium-browser
+            ;;
+        fedora|centos|rhel|ol)
+            if command -v dnf &> /dev/null; then
+                dnf install -y chromium
+            else
+                yum install -y chromium
+            fi
+            ;;
+        arch|manjaro)
+            pacman -Sy --noconfirm chromium
+            ;;
+        suse|opensuse*)
+            zypper install -y chromium
+            ;;
+        alpine)
+            apk add --no-cache chromium
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+detect_chrome_executable() {
+    if [ -n "$TADO_PROXY_CHROME_EXECUTABLE" ] && [ -x "$TADO_PROXY_CHROME_EXECUTABLE" ]; then
+        echo "$TADO_PROXY_CHROME_EXECUTABLE"
+        return 0
+    fi
+
+    if [[ "$OSTYPE" == "linux"* ]]; then
+        for candidate in chromium chromium-browser google-chrome google-chrome-stable brave-browser; do
+            if command -v "$candidate" &> /dev/null; then
+                command -v "$candidate"
+                return 0
+            fi
+        done
+
+        if install_chromium_linux; then
+            for candidate in chromium chromium-browser; do
+                if command -v "$candidate" &> /dev/null; then
+                    command -v "$candidate"
+                    return 0
+                fi
+            done
+        fi
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        local mac_candidates=(
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+            "/Applications/Chromium.app/Contents/MacOS/Chromium"
+            "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
+        )
+        for candidate in "${mac_candidates[@]}"; do
+            if [ -x "$candidate" ]; then
+                echo "$candidate"
+                return 0
+            fi
+        done
+    fi
+
+    read -rp "Enter Chrome/Chromium executable path: " CHROME_EXECUTABLE
+    if [ -n "$CHROME_EXECUTABLE" ] && [ -x "$CHROME_EXECUTABLE" ]; then
+        echo "$CHROME_EXECUTABLE"
+        return 0
+    fi
+
+    return 1
+}
+
+in_container() {
+    if [ -f /.dockerenv ]; then
+        return 0
+    fi
+    if [ -r /proc/1/cgroup ] && grep -qE '(docker|lxc|containerd|kubepods)' /proc/1/cgroup; then
+        return 0
+    fi
+    return 1
+}
+
+setup_systemd_proxy_service() {
+    local service_file="/etc/systemd/system/tado-api-proxy@.service"
+
+    if [ ! -f "$service_file" ]; then
+        cat <<EOF > "$service_file"
+[Unit]
+Description=Tado API Proxy (Account %i)
+After=network.target
+
+[Service]
+EnvironmentFile=/etc/tado-api-proxy/account%i.env
+ExecStart=/usr/local/bin/tado-api-proxy
+User=${ORIGINAL_USER}
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    fi
+
+    systemctl daemon-reload 1>&2
+}
+
+setup_launchd_proxy_service() {
+    local account_index=$1
+    local wrapper_path="/usr/local/bin/tado-api-proxy-account${account_index}"
+    local launch_agents_dir="${ORIGINAL_HOME}/Library/LaunchAgents"
+    local plist_path="${launch_agents_dir}/com.user.tadoapiproxy.account${account_index}.plist"
+
+    mkdir -p "$launch_agents_dir"
+
+    cat <<EOF > "$wrapper_path"
+#!/bin/bash
+set -a
+. /etc/tado-api-proxy/account${account_index}.env
+set +a
+exec /usr/local/bin/tado-api-proxy
+EOF
+    chmod 755 "$wrapper_path"
+
+    cat <<EOF > "$plist_path"
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.tadoapiproxy.account${account_index}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${wrapper_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>
+EOF
+
+    sudo -u "$ORIGINAL_USER" launchctl unload "$plist_path" &> /dev/null || true
+    sudo -u "$ORIGINAL_USER" launchctl load "$plist_path" 1>&2
+}
+
+setup_proxy_binary() {
+    local account_index=$1
+    local chrome_executable="$2"
+    local default_port=$((8080 + account_index - 1))
+    local listen_addr=""
+    local host_port=""
+    local email=""
+    local password=""
+    local proxy_data_root="/var/lib/tado-api-proxy"
+    local proxy_data_dir="${proxy_data_root}/account${account_index}"
+    local proxy_env_dir="/etc/tado-api-proxy"
+    local proxy_env_file="${proxy_env_dir}/account${account_index}.env"
+
+    read -rp "Enter tado account email for account ${account_index}: " email
+    read -rsp "Enter tado account password for account ${account_index}: " password
+    printf "\n" >&2
+    read -rp "Enter proxy host port for account ${account_index} (default: ${default_port}): " host_port
+    host_port=${host_port:-$default_port}
+    if in_container; then
+        listen_addr="0.0.0.0:${host_port}"
+    else
+        listen_addr="127.0.0.1:${host_port}"
+    fi
+
+    mkdir -p "$proxy_data_dir" "$proxy_env_dir"
+    chown -R "$ORIGINAL_USER" "$proxy_data_dir"
+
+    local email_escaped
+    local password_escaped
+    local chrome_escaped
+    local listen_escaped
+    local token_path
+    local cookies_path
+
+    email_escaped=$(escape_squote "$email")
+    password_escaped=$(escape_squote "$password")
+    chrome_escaped=$(escape_squote "$chrome_executable")
+    listen_escaped=$(escape_squote "$listen_addr")
+    token_path="${proxy_data_dir}/token.json"
+    cookies_path="${proxy_data_dir}/cookies.json"
+
+    cat <<EOF > "$proxy_env_file"
+EMAIL='${email_escaped}'
+PASSWORD='${password_escaped}'
+LISTEN_ADDR='${listen_escaped}'
+TOKEN_PATH='${token_path}'
+COOKIES_PATH='${cookies_path}'
+CHROME_EXECUTABLE='${chrome_escaped}'
+HEADLESS='true'
+EOF
+    chown "$ORIGINAL_USER" "$proxy_env_file"
+    chmod 600 "$proxy_env_file"
+
+    if command -v systemctl &> /dev/null && [ -d /run/systemd/system ]; then
+        setup_systemd_proxy_service
+        systemctl enable --now "tado-api-proxy@${account_index}.service" 1>&2
+    elif [[ "$OSTYPE" == "darwin"* ]] && command -v launchctl &> /dev/null; then
+        setup_launchd_proxy_service "$account_index"
+    else
+        local log_file="/var/log/tado-api-proxy-account${account_index}.log"
+        mkdir -p "$(dirname "$log_file")"
+        (
+            set -a
+            . "$proxy_env_file"
+            set +a
+            nohup /usr/local/bin/tado-api-proxy >> "$log_file" 2>&1 &
+        )
+    fi
+
+    printf '%s\n' "http://localhost:${host_port}"
+}
+
+# 2. Set Environment Variables (tado-api-proxy)
 set_env_variables() {
     echo "Setting up environment variables for multiple Tado accounts..."
 
@@ -87,69 +455,56 @@ set_env_variables() {
     # Initialize the env file with NUM_ACCOUNTS
     echo "export NUM_ACCOUNTS=$NUM_ACCOUNTS" > /etc/tado-assistant.env
 
+    local chrome_executable=""
+
+    if ! ensure_proxy_binary; then
+        echo "Failed to auto-setup tado-api-proxy. Ensure the binary can be downloaded."
+        exit 1
+    fi
+
+    echo "Using proxy setup method: binary"
+    echo "Checking for Chrome/Chromium (this may take a few minutes)..."
+
+    chrome_executable=$(detect_chrome_executable) || true
+    if [ -z "$chrome_executable" ]; then
+        echo "Chrome/Chromium executable not found. Install Chrome/Chromium or set TADO_PROXY_CHROME_EXECUTABLE."
+        exit 1
+    fi
+
     # Loop through each account for configuration
     i=1
     while [ "$i" -le "$NUM_ACCOUNTS" ]; do
         echo "Configuring account $i..."
 
-        response=$(curl -s -X POST "https://login.tado.com/oauth2/device_authorize" \
-            -d "client_id=1bb50063-6b0c-4d11-bd99-387f4a91cc46" \
-            -d "scope=offline_access")
+        proxy_output=$(setup_proxy_binary "$i" "$chrome_executable")
         if [ $? -ne 0 ]; then
-            echo "Failed to initiate device code flow."
             exit 1
         fi
 
-        device_code=$(echo "$response" | jq -r '.device_code')
-        user_code=$(echo "$response" | jq -r '.user_code')
-        verification_uri_complete=$(echo "$response" | jq -r '.verification_uri_complete')
-        interval=$(echo "$response" | jq -r '.interval')
-        expires_in=$(echo "$response" | jq -r '.expires_in')
+        API_BASE_URL=""
+        while IFS= read -r line; do
+            line=${line%$'\r'}
+            case "$line" in
+                http://*|https://*)
+                    API_BASE_URL="$line"
+                    ;;
+            esac
+        done <<< "$proxy_output"
 
-        if [ -z "$device_code" ] || [ "$device_code" == "null" ]; then
-            echo "Error: Failed to retrieve device code."
+        if [ -z "$API_BASE_URL" ]; then
+            echo "Failed to configure proxy for account $i."
             exit 1
         fi
-
-        echo "Please visit in your browser: $verification_uri_complete"
-        echo "User code: $user_code"
-        echo "Waiting for authentication..."
-
-        start_time=$(date +%s)
-        while true; do
-            current_time=$(date +%s)
-            if (( current_time - start_time > expires_in )); then
-                echo "Authentication timed out."
-                exit 1
-            fi
-
-            token_response=$(curl -s -X POST "https://login.tado.com/oauth2/token" \
-                -d "client_id=1bb50063-6b0c-4d11-bd99-387f4a91cc46" \
-                -d "device_code=$device_code" \
-                -d "grant_type=urn:ietf:params:oauth:grant-type:device_code")
-
-            error=$(echo "$token_response" | jq -r '.error // empty')
-            if [ "$error" == "authorization_pending" ]; then
-                sleep "$interval"
-                continue
-            elif [ -n "$error" ]; then
-                echo "Error: $error"
-                exit 1
-            else
-                refresh_token=$(echo "$token_response" | jq -r '.refresh_token')
-                break
-            fi
-        done
 
         read -rp "Enter CHECKING_INTERVAL for account $i (default: 15): " CHECKING_INTERVAL
-        read -rp "Enter MAX_OPEN_WINDOW_DURATION for account $i (in seconds): " MAX_OPEN_WINDOW_DURATION
+        read -rp "Enter MAX_OPEN_WINDOW_DURATION for account $i (in seconds, leave empty to use the Tado app default): " MAX_OPEN_WINDOW_DURATION
         read -rp "Enable geofencing check for account $i? (true/false, default: true): " ENABLE_GEOFENCING
         read -rp "Enable log for account $i? (true/false, default: false): " ENABLE_LOG
         read -rp "Enter log file path for account $i (default: /var/log/tado-assistant.log): " LOG_FILE
 
-        escaped_refresh_token=$(printf '%s' "$refresh_token" | sed "s/'/'\\\\''/g")
+        escaped_api_base_url=$(printf '%s' "$API_BASE_URL" | sed "s/'/'\\\\''/g")
         {
-            echo "export TADO_REFRESH_TOKEN_$i='$escaped_refresh_token'"
+            echo "export TADO_API_BASE_URL_$i='$escaped_api_base_url'"
             echo "export CHECKING_INTERVAL_$i='${CHECKING_INTERVAL:-15}'"
             echo "export MAX_OPEN_WINDOW_DURATION_$i='${MAX_OPEN_WINDOW_DURATION:-}'"
             echo "export ENABLE_GEOFENCING_$i='${ENABLE_GEOFENCING:-true}'"
@@ -178,8 +533,9 @@ setup_service() {
         chmod +x "$SCRIPT_PATH"
     fi
 
-    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        SERVICE_CONTENT="[Unit]
+    if [[ "$OSTYPE" == "linux"* ]]; then
+        if command -v systemctl &> /dev/null && [ -d /run/systemd/system ]; then
+            SERVICE_CONTENT="[Unit]
 Description=Tado Assistant Service
 
 [Service]
@@ -190,10 +546,29 @@ Restart=always
 [Install]
 WantedBy=multi-user.target"
 
-        echo "$SERVICE_CONTENT" > /etc/systemd/system/tado-assistant.service
-        systemctl enable tado-assistant.service
-        systemctl restart tado-assistant.service
+            echo "$SERVICE_CONTENT" > /etc/systemd/system/tado-assistant.service
+            systemctl enable tado-assistant.service
+            systemctl restart tado-assistant.service
+        elif command -v rc-update &> /dev/null && [ -d /etc/init.d ]; then
+            cat <<'EOF' > /etc/init.d/tado-assistant
+#!/sbin/openrc-run
 
+command="/usr/local/bin/tado-assistant.sh"
+command_background="yes"
+pidfile="/run/tado-assistant.pid"
+output_log="/var/log/tado-assistant.log"
+error_log="/var/log/tado-assistant.log"
+
+depend() {
+    need net
+}
+EOF
+            chmod +x /etc/init.d/tado-assistant
+            rc-update add tado-assistant default || true
+            rc-service tado-assistant restart || rc-service tado-assistant start || true
+        else
+            echo "No supported service manager found. Run $SCRIPT_PATH manually or set up your own service."
+        fi
     elif [[ "$OSTYPE" == "darwin"* ]]; then
         LAUNCHD_CONTENT="<?xml version=\"1.0\" encoding=\"UTF-8\"?>
 <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">

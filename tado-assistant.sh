@@ -7,7 +7,7 @@
 LOG_DIR=$(dirname "$LOG_FILE")
 mkdir -p "$LOG_DIR"
 
-declare -A OPEN_WINDOW_ACTIVATION_TIMES TOKENS EXPIRY_TIMES HOME_IDS
+declare -A OPEN_WINDOW_ACTIVATION_TIMES HOME_IDS API_BASE_URLS
 LAST_MESSAGE="" # Used to prevent duplicate messages
 
 # Reset the log file if it's older than 10 days
@@ -40,67 +40,123 @@ handle_curl_error() {
     return 0
 }
 
-# Login function
-login() {
+normalize_base_url() {
+    local url="$1"
+    echo "${url%/}"
+}
+
+api_request() {
     local account_index=$1
-    local refresh_token_var="TADO_REFRESH_TOKEN_$account_index"
-    local refresh_token="${!refresh_token_var}"
-    local token_response expires_in new_refresh_token home_data home_id
-    local retry_count=0
+    local method=$2
+    local path=$3
+    local data=${4:-}
+    local base_url="${API_BASE_URLS[$account_index]}"
+    local url="${base_url}${path}"
+    local curl_args=(-s -X "$method")
 
-    while [ $retry_count -lt 3 ]; do
-        token_response=$(curl -s -X POST "https://login.tado.com/oauth2/token" \
-            -d "client_id=1bb50063-6b0c-4d11-bd99-387f4a91cc46" \
-            -d "grant_type=refresh_token" \
-            -d "refresh_token=$refresh_token")
+    if [ -n "$data" ]; then
+        curl_args+=(-H "Content-Type: application/json" -d "$data")
+    fi
 
-        if ! handle_curl_error; then
-            log_message "❌ Curl error during token refresh for account $account_index. Retrying later."
+    curl "${curl_args[@]}" "$url"
+}
+
+is_local_proxy() {
+    local base_url="$1"
+    case "$base_url" in
+        http://localhost*|http://127.0.0.1*)
+            return 0
+            ;;
+        *)
             return 1
-        fi
+            ;;
+    esac
+}
 
-        local access_token=$(echo "$token_response" | jq -r '.access_token')
-        new_refresh_token=$(echo "$token_response" | jq -r '.refresh_token')
+ensure_proxy_running() {
+    local account_index=$1
+    local base_url="${API_BASE_URLS[$account_index]}"
+    local env_file="/etc/tado-api-proxy/account${account_index}.env"
+    local log_file="/var/log/tado-api-proxy-account${account_index}.log"
+    local runtime_dir="${TADO_PROXY_RUNTIME_DIR:-/tmp/tado-api-proxy}"
+    local lock_dir="${runtime_dir}/account${account_index}.lock"
+    local pid_file="${runtime_dir}/account${account_index}.pid"
+    local state_file="${runtime_dir}/account${account_index}.last_start"
+    local backoff="${TADO_PROXY_START_BACKOFF:-30}"
 
-        # Retain existing refresh token if none provided
-        if [[ -z "$new_refresh_token" || "$new_refresh_token" == "null" ]]; then
-            new_refresh_token="$refresh_token"
-        fi
-
-        if [ -n "$access_token" ] && [ "$access_token" != "null" ]; then
-            break
-        fi
-
-        log_message "❌ Refresh token error for account $account_index (Attempt $((retry_count+1))/3)"
-        sleep 30
-        retry_count=$((retry_count+1))
-    done
-
-    if [ -z "$access_token" ] || [ "$access_token" == "null" ]; then
-        log_message "🛑 FATAL: Token refresh failed after 3 attempts for account $account_index"
-        exit 1
+    if command -v systemctl &> /dev/null && [ -d /run/systemd/system ]; then
+        return 0
+    fi
+    if [[ "$OSTYPE" == "darwin"* ]] && command -v launchctl &> /dev/null; then
+        return 0
+    fi
+    if ! is_local_proxy "$base_url"; then
+        return 0
+    fi
+    if [ ! -x /usr/local/bin/tado-api-proxy ]; then
+        log_message "⚠️ Account $account_index: tado-api-proxy binary not found."
+        return 1
+    fi
+    if curl -fsS --max-time 2 "${base_url}/docs" >/dev/null 2>&1; then
+        return 0
+    fi
+    if [ ! -f "$env_file" ]; then
+        log_message "⚠️ Account $account_index: Proxy env file missing at $env_file."
+        return 1
     fi
 
-    # Update environment file only if token changed
-    if [ "$new_refresh_token" != "$refresh_token" ]; then
-        escaped_new_refresh_token=$(printf "%s" "$new_refresh_token" | sed "s/'/'\\\\''/g")
-        sed -i'' "s/^export TADO_REFRESH_TOKEN_${account_index}='.*'/export TADO_REFRESH_TOKEN_${account_index}='${escaped_new_refresh_token}'/" /etc/tado-assistant.env
-        source /etc/tado-assistant.env # Reload the environment variables
+    case "$backoff" in
+        ''|*[!0-9]*)
+            backoff=30
+            ;;
+    esac
+
+    mkdir -p "$runtime_dir"
+    if [ -f "$pid_file" ]; then
+        if kill -0 "$(cat "$pid_file" 2>/dev/null)" 2>/dev/null; then
+            return 0
+        fi
+        rm -f "$pid_file"
     fi
 
-    # Update in-memory environment variable
-    declare "TADO_REFRESH_TOKEN_${account_index}=$new_refresh_token"
-    export "TADO_REFRESH_TOKEN_${account_index}"
+    if ! mkdir "$lock_dir" 2>/dev/null; then
+        return 0
+    fi
+    trap 'rmdir "$lock_dir" 2>/dev/null' RETURN
 
-    TOKENS[$account_index]=$access_token
-    expires_in=$(echo "$token_response" | jq -r '.expires_in')
-    EXPIRY_TIMES[$account_index]=$(($(date +%s) + expires_in - 60))
+    local now
+    now=$(date +%s)
+    if [ -f "$state_file" ]; then
+        local last_attempt
+        last_attempt=$(cat "$state_file" 2>/dev/null || true)
+        if [ -n "$last_attempt" ] && [ $((now - last_attempt)) -lt "$backoff" ]; then
+            return 0
+        fi
+    fi
+    printf '%s' "$now" > "$state_file"
 
-    home_data=$(curl -s -X GET "https://my.tado.com/api/v2/me" -H "Authorization: Bearer ${TOKENS[$account_index]}")
+    log_message "🔌 Account $account_index: Starting local tado-api-proxy."
+    mkdir -p "$(dirname "$log_file")"
+    (
+        set -a
+        . "$env_file"
+        set +a
+        nohup /usr/local/bin/tado-api-proxy >> "$log_file" 2>&1 &
+        echo $! > "$pid_file"
+    )
+    sleep 1
+}
+
+fetch_home_id() {
+    local account_index=$1
+    local home_data
+    local home_id
+
+    home_data=$(api_request "$account_index" GET "/api/v2/me")
     handle_curl_error
 
     home_id=$(echo "$home_data" | jq -r '.homes[0].id')
-    if [ -z "$home_id" ]; then
+    if [ -z "$home_id" ] || [ "$home_id" == "null" ]; then
         log_message "⚠️ Error fetching home ID for account $account_index!"
         exit 1
     fi
@@ -118,19 +174,28 @@ log_message() {
     echo "$(date '+%d-%m-%Y %H:%M:%S') # $message"
 }
 
+init_account() {
+    local account_index=$1
+
+    log_message "🔌 Account $account_index: Using tado-api-proxy at ${API_BASE_URLS[$account_index]}"
+    ensure_proxy_running "$account_index"
+    fetch_home_id "$account_index"
+}
+
 homeState() {
     local account_index=$1
     local home_id=${HOME_IDS[$account_index]}
     local current_time=$(date +%s)
 
-    if [ -n "${EXPIRY_TIMES[$account_index]}" ] && [ "$current_time" -ge "${EXPIRY_TIMES[$account_index]}" ]; then
-        login "$account_index"
-    fi
+    ensure_proxy_running "$account_index"
 
-    local home_state=$(curl -s -X GET "https://my.tado.com/api/v2/homes/$home_id/state" -H "Authorization: Bearer ${TOKENS[$account_index]}" | jq -r '.presence')
+    local home_state_response
+    home_state_response=$(api_request "$account_index" GET "/api/v2/homes/$home_id/state")
     handle_curl_error
+    local home_state=$(echo "$home_state_response" | jq -r '.presence')
 
-    local mobile_devices=$(curl -s -X GET "https://my.tado.com/api/v2/homes/$home_id/mobileDevices" -H "Authorization: Bearer ${TOKENS[$account_index]}")
+    local mobile_devices
+    mobile_devices=$(api_request "$account_index" GET "/api/v2/homes/$home_id/mobileDevices")
     handle_curl_error
 
     # Check if mobile_devices is a valid array and not empty
@@ -151,19 +216,13 @@ homeState() {
           log_message "🚶 Account $account_index: Home is in AWAY Mode and there are no devices at home."
       elif [ ${#devices_home[@]} -eq 0 ] && [ "$home_state" == "HOME" ]; then
           log_message "🏠 Account $account_index: Home is in HOME Mode but there are no devices at home."
-          curl -s -X PUT "https://my.tado.com/api/v2/homes/$home_id/presenceLock" \
-              -H "Authorization: Bearer ${TOKENS[$account_index]}" \
-              -H "Content-Type: application/json" \
-              -d '{"homePresence": "AWAY"}'
+          api_request "$account_index" PUT "/api/v2/homes/$home_id/presenceLock" '{"homePresence": "AWAY"}'
           handle_curl_error
           log_message "Done! Activated AWAY mode for account $account_index."
       elif [ ${#devices_home[@]} -gt 0 ] && [ "$home_state" == "AWAY" ]; then
           devices_str=$(IFS=,; echo "${devices_home[*]}")
           log_message "🚶 Account $account_index: Home is in AWAY Mode but the devices $devices_str are at home."
-          curl -s -X PUT "https://my.tado.com/api/v2/homes/$home_id/presenceLock" \
-              -H "Authorization: Bearer ${TOKENS[$account_index]}" \
-              -H "Content-Type: application/json" \
-              -d '{"homePresence": "HOME"}'
+          api_request "$account_index" PUT "/api/v2/homes/$home_id/presenceLock" '{"homePresence": "HOME"}'
           handle_curl_error
           log_message "Done! Activated HOME mode for account $account_index."
       fi
@@ -172,7 +231,8 @@ homeState() {
     fi
 
     # Check zones for open windows
-    local zones=$(curl -s -X GET "https://my.tado.com/api/v2/homes/$home_id/zones" -H "Authorization: Bearer ${TOKENS[$account_index]}")
+    local zones
+    zones=$(api_request "$account_index" GET "/api/v2/homes/$home_id/zones")
     handle_curl_error
 
     # Check if zones is a valid array and not empty
@@ -187,8 +247,10 @@ homeState() {
             continue
         fi
 
-        local open_window_detected=$(curl -s -X GET "https://my.tado.com/api/v2/homes/$home_id/zones/$zone_id/state" -H "Authorization: Bearer ${TOKENS[$account_index]}" | jq -r '.openWindowDetected')
+        local open_window_state
+        open_window_state=$(api_request "$account_index" GET "/api/v2/homes/$home_id/zones/$zone_id/state")
         handle_curl_error
+        local open_window_detected=$(echo "$open_window_state" | jq -r '.openWindowDetected')
 
             if [ "$open_window_detected" == "true" ]; then
                 current_time=$(date +%s)
@@ -201,8 +263,7 @@ homeState() {
                     if [ "$time_diff" -gt "$MAX_OPEN_WINDOW_DURATION" ]; then
                         log_message "❄️ Account $account_index: $zone_name: Open window detected for more than $MAX_OPEN_WINDOW_DURATION seconds. Cancelling open window mode."
                         # Cancel open window mode for the zone
-                        curl -s -X DELETE "https://my.tado.com/api/v2/homes/$home_id/zones/$zone_id/state/openWindow" \
-                            -H "Authorization: Bearer ${TOKENS[$account_index]}"
+                        api_request "$account_index" DELETE "/api/v2/homes/$home_id/zones/$zone_id/state/openWindow"
                         handle_curl_error
                         log_message "✅ Account $account_index: Cancelled open window mode for $zone_name."
                         unset "OPEN_WINDOW_ACTIVATION_TIMES[$zone_id]"
@@ -212,8 +273,7 @@ homeState() {
 
                 log_message "❄️ Account $account_index: $zone_name: Open window detected, activating OpenWindow mode."
                 # Set open window mode for the zone
-                curl -s -X POST "https://my.tado.com/api/v2/homes/$home_id/zones/$zone_id/state/openWindow/activate" \
-                    -H "Authorization: Bearer ${TOKENS[$account_index]}"
+                api_request "$account_index" POST "/api/v2/homes/$home_id/zones/$zone_id/state/openWindow/activate"
                 handle_curl_error
                 log_message "🌬️ Account $account_index: Activating open window mode for $zone_name."
 
@@ -233,6 +293,7 @@ for (( i=1; i<=NUM_ACCOUNTS; i++ )); do
     ENABLE_GEOFENCING_VAR="ENABLE_GEOFENCING_$i"
     ENABLE_LOG_VAR="ENABLE_LOG_$i"
     LOG_FILE_VAR="LOG_FILE_$i"
+    API_BASE_URL_VAR="TADO_API_BASE_URL_$i"
 
     # Fetch dynamic variables
     CHECKING_INTERVAL=${!CHECKING_INTERVAL_VAR:-15}
@@ -240,8 +301,11 @@ for (( i=1; i<=NUM_ACCOUNTS; i++ )); do
     ENABLE_GEOFENCING=${!ENABLE_GEOFENCING_VAR:-false}
     ENABLE_LOG=${!ENABLE_LOG_VAR:-false}
     LOG_FILE=${!LOG_FILE_VAR:-'/var/log/tado-assistant.log'}
+    API_BASE_URL=${!API_BASE_URL_VAR:-${TADO_API_BASE_URL:-"http://localhost:8080"}}
+    API_BASE_URL=$(normalize_base_url "$API_BASE_URL")
+    API_BASE_URLS[$i]="$API_BASE_URL"
 
-    login "$i"
+    init_account "$i"
 
     # Loop to monitor home state
     while true; do
