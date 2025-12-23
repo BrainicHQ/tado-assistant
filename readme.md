@@ -63,6 +63,7 @@ During the installation, the script will:
 - Set up the required dependencies.
 - Configure additional settings, including setting the checking interval and the maximum duration for the 'Open Window' detection feature.
 - Auto-setup tado-api-proxy (binary) and configure a base URL per account.
+- Install Chromium automatically if missing (required for the proxy).
 - Initialize `tado-assistant.sh` as a background service.
 - Introduce a new configuration option for the 'Open Window' feature. You will be prompted to enter the maximum
   duration (in seconds) that the system should wait before resuming normal operation after an open window is detected.

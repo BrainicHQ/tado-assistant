@@ -225,10 +225,13 @@ install_chromium_linux() {
         distro=$ID
     fi
 
+    echo "Installing Chromium (this may take a few minutes)..."
+
     case $distro in
         debian|ubuntu|raspbian)
-            apt-get update
-            apt-get install -y chromium || apt-get install -y chromium-browser
+            DEBIAN_FRONTEND=noninteractive apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends chromium || \
+                DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends chromium-browser
             ;;
         fedora|centos|rhel|ol)
             if command -v dnf &> /dev/null; then
@@ -446,6 +449,7 @@ set_env_variables() {
     fi
 
     echo "Using proxy setup method: binary"
+    echo "Checking for Chrome/Chromium (this may take a few minutes)..."
 
     chrome_executable=$(detect_chrome_executable) || true
     if [ -z "$chrome_executable" ]; then
