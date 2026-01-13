@@ -187,6 +187,9 @@ optimize_flow_temperature() {
     local home_id=${HOME_IDS[$account_index]}
     local current_time=$(date +%s)
     
+    # Note: ENABLE_FLOW_TEMP_OPTIMIZATION, FLOW_TEMP_MIN, FLOW_TEMP_MAX, and FLOW_TEMP_CURVE_SLOPE
+    # are set in the main loop before this function is called, using account-specific variables
+    
     # Check if flow temperature optimization is enabled
     if [ "$ENABLE_FLOW_TEMP_OPTIMIZATION" != "true" ]; then
         return 0
@@ -219,13 +222,8 @@ optimize_flow_temperature() {
     
     # Calculate optimal flow temperature using weather compensation curve
     # Formula: flow_temp = max_temp - (slope * outdoor_temp)
-    # Default slope: 1.5 (steeper curve = more aggressive adjustment)
-    local slope="${FLOW_TEMP_CURVE_SLOPE:-1.5}"
-    local max_temp="${FLOW_TEMP_MAX:-75}"
-    local min_temp="${FLOW_TEMP_MIN:-35}"
-    
     # Calculate target flow temperature
-    local target_flow_temp=$(awk -v max="$max_temp" -v slope="$slope" -v outdoor="$outdoor_temp" -v min="$min_temp" '
+    local target_flow_temp=$(awk -v max="$FLOW_TEMP_MAX" -v slope="$FLOW_TEMP_CURVE_SLOPE" -v outdoor="$outdoor_temp" -v min="$FLOW_TEMP_MIN" '
         BEGIN {
             result = max - (slope * outdoor)
             if (result > max) result = max
@@ -246,8 +244,9 @@ optimize_flow_temperature() {
         return 0
     fi
     
-    # Process each heating zone
-    echo "$zones" | jq -c '.[]' | while read -r zone; do
+    # Process each heating zone (using process substitution to avoid subshell)
+    local zone_processed=false
+    while IFS= read -r zone; do
         local zone_id=$(echo "$zone" | jq -r '.id')
         local zone_name=$(echo "$zone" | jq -r '.name')
         local zone_type=$(echo "$zone" | jq -r '.type')
@@ -256,16 +255,6 @@ optimize_flow_temperature() {
         if [ "$zone_type" != "HEATING" ]; then
             continue
         fi
-        
-        # Get zone capabilities to check if flow temperature control is supported
-        local capabilities
-        capabilities=$(api_request "$account_index" GET "/api/v2/homes/$home_id/zones/$zone_id/capabilities")
-        if ! handle_curl_error; then
-            continue
-        fi
-        
-        # Check if zone supports flow temperature (this is available on some Tado systems)
-        local supports_flow_temp=$(echo "$capabilities" | jq -r '.temperatures?.celsius?.flowTemperature // empty')
         
         # Get current zone state
         local zone_state
@@ -304,10 +293,15 @@ optimize_flow_temperature() {
             overlay_response=$(api_request "$account_index" PUT "/api/v2/homes/$home_id/zones/$zone_id/overlay" "$overlay_data")
             if handle_curl_error; then
                 log_message "✅ Account $account_index: $zone_name: Applied optimized heating settings."
-                LAST_FLOW_TEMP_ADJUSTMENT[$account_index]=$current_time
+                zone_processed=true
             fi
         fi
-    done
+    done < <(echo "$zones" | jq -c '.[]')
+    
+    # Update last adjustment time if any zone was processed
+    if [ "$zone_processed" = true ]; then
+        LAST_FLOW_TEMP_ADJUSTMENT[$account_index]=$current_time
+    fi
 }
 
 homeState() {
