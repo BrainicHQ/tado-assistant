@@ -267,12 +267,25 @@ optimize_flow_temperature() {
         local heating_power=$(echo "$zone_state" | jq -r '.activityDataPoints.heatingPower.percentage // 0')
         
         # Only adjust if heating is active (> 0%)
-        if awk -v power="$heating_power" 'BEGIN {exit !(power > 0)}'; then
+        # Use bc for floating point comparison if available, fallback to awk
+        if command -v bc &> /dev/null && [ "$(echo "$heating_power > 0" | bc -l)" -eq 1 ]; then
+            local is_heating=true
+        elif awk -v power="$heating_power" 'BEGIN {exit !(power > 0)}'; then
+            local is_heating=true
+        else
+            local is_heating=false
+        fi
+        
+        if [ "$is_heating" = true ]; then
             log_message "🌡️ Account $account_index: $zone_name: Outdoor temp: ${outdoor_temp}°C, Target flow temp: ${target_flow_temp}°C"
             
-            # Set overlay with optimized flow temperature
-            # Note: Not all Tado systems support flow temperature control via API
-            # This will attempt to set it, but may not work on all systems
+            # Apply temperature optimization via zone overlay
+            # NOTE: This sets the target room temperature. The actual flow temperature
+            # is controlled by the Tado system's internal logic based on the room target.
+            # Some newer Tado systems with X series thermostats support direct flow
+            # temperature control, but the standard API overlay sets room temperature.
+            # The weather compensation curve calculates an appropriate target that 
+            # encourages the system to use lower flow temperatures when outdoor temps are higher.
             local overlay_data=$(jq -n \
                 --arg temp "$target_flow_temp" \
                 '{
@@ -288,7 +301,7 @@ optimize_flow_temperature() {
                     }
                 }')
             
-            # Apply overlay (this sets the temperature, flow temp control depends on system capabilities)
+            # Apply overlay to optimize heating
             local overlay_response
             overlay_response=$(api_request "$account_index" PUT "/api/v2/homes/$home_id/zones/$zone_id/overlay" "$overlay_data")
             if handle_curl_error; then

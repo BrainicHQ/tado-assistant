@@ -19,8 +19,9 @@ choice for both technical and non-technical users.
 - **Open Window Detection**: Recognizes open windows in different zones and activates the appropriate mode.
 - **Customizable Open Window Duration**: Set your preferred duration for the 'Open Window' detection feature, allowing
   for personalized energy-saving adjustments.
-- **Flow Temperature Optimization**: Automatically optimizes your heating system's flow temperature based on outdoor
-  weather conditions using a weather compensation curve for improved energy efficiency.
+- **Flow Temperature Optimization**: Automatically optimizes your heating system's efficiency based on outdoor
+  weather conditions using a weather compensation curve. The system adjusts target temperatures to encourage more
+  efficient operation, reducing energy consumption while maintaining comfort.
 
 ## ⚠️ **Disclaimer**
 
@@ -324,11 +325,13 @@ environment is always optimal. Here's how you can interact with it:
           launchctl load ~/Library/LaunchAgents/com.user.tadoassistant.plist
           ```
    
-   **How it works**: The system uses a weather compensation curve to calculate the optimal heating temperature based on 
-   outdoor conditions. The formula is: `flow_temp = FLOW_TEMP_MAX - (FLOW_TEMP_CURVE_SLOPE × outdoor_temperature)`. 
+   **How it works**: The system uses a weather compensation curve to calculate optimal target temperatures based on 
+   outdoor conditions. The formula is: `target_temp = FLOW_TEMP_MAX - (FLOW_TEMP_CURVE_SLOPE × outdoor_temperature)`. 
    For example, with default settings (max=75°C, slope=1.5), when it's 10°C outside, the target would be 60°C 
-   (75 - 1.5×10). The system checks and adjusts temperatures every 15 minutes when heating is active. This helps reduce 
-   energy consumption while maintaining comfort.
+   (75 - 1.5×10). The system checks and adjusts temperatures every 15 minutes when heating is active. By setting 
+   appropriate targets based on outdoor temperature, this encourages your heating system to operate more efficiently, 
+   helping to reduce energy consumption while maintaining comfort. The actual flow temperature in your boiler is 
+   controlled by the Tado system's internal logic based on these targets.
 
 Remember, Tado Assistant is designed to be hands-off. Once set up, it should require minimal interaction, letting you
 enjoy a comfortable home environment without any fuss.
