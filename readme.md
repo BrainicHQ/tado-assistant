@@ -19,6 +19,9 @@ choice for both technical and non-technical users.
 - **Open Window Detection**: Recognizes open windows in different zones and activates the appropriate mode.
 - **Customizable Open Window Duration**: Set your preferred duration for the 'Open Window' detection feature, allowing
   for personalized energy-saving adjustments.
+- **Flow Temperature Optimization**: Automatically optimizes your heating system's efficiency based on outdoor
+  weather conditions using a weather compensation curve. The system adjusts target temperatures to encourage more
+  efficient operation, reducing energy consumption while maintaining comfort.
 
 ## ⚠️ **Disclaimer**
 
@@ -239,6 +242,12 @@ For each account (replace `n` with the account number, e.g., 1, 2, 3, ...):
 - `LOG_FILE_n`: Destination for the log file for the nth account. Default is `/var/log/tado-assistant.log`.
 - `MAX_OPEN_WINDOW_DURATION_n`: Define the maximum duration (in seconds) for the 'Open Window' detection feature to be
   active for the nth account. Leave this field empty to use the default duration set in the Tado app.
+- `ENABLE_FLOW_TEMP_OPTIMIZATION_n`: Toggle flow temperature optimization for the nth account. Values: `true` or `false`. 
+  Default is `false`. When enabled, automatically adjusts heating based on outdoor temperature.
+- `FLOW_TEMP_MIN_n`: Minimum flow temperature in Celsius for optimization. Default is `35`.
+- `FLOW_TEMP_MAX_n`: Maximum flow temperature in Celsius for optimization. Default is `75`.
+- `FLOW_TEMP_CURVE_SLOPE_n`: Weather compensation curve slope (how aggressively temperature adjusts). Default is `1.5`.
+  Higher values (e.g., 2.0) provide more aggressive adjustments, lower values (e.g., 1.0) are more conservative.
 
 Feel free to tweak these variables directly if needed. Ensure to adjust the variable suffix `n` to match the corresponding account number.
 
@@ -294,6 +303,35 @@ environment is always optimal. Here's how you can interact with it:
           ```
    This setting defines how long the system should wait before resuming normal operation after an open window is
    detected, allowing for energy-saving adjustments tailored to your needs.
+
+5. **Enabling Flow Temperature Optimization**: The flow temperature optimization feature automatically adjusts your 
+   heating system based on outdoor temperature for improved energy efficiency. To enable this feature:
+    - Edit the `/etc/tado-assistant.env` file.
+    - Add or modify the following variables for your account (replace `n` with your account number):
+      ```bash
+      ENABLE_FLOW_TEMP_OPTIMIZATION_n=true
+      FLOW_TEMP_MIN_n=35          # Minimum flow temperature in °C
+      FLOW_TEMP_MAX_n=75          # Maximum flow temperature in °C
+      FLOW_TEMP_CURVE_SLOPE_n=1.5 # Weather compensation curve slope
+      ```
+    - Save the changes and restart the service for them to take effect.
+        - For Linux:
+          ```bash
+          sudo systemctl restart tado-assistant.service
+          ```
+        - For macOS:
+          ```bash
+          launchctl unload ~/Library/LaunchAgents/com.user.tadoassistant.plist
+          launchctl load ~/Library/LaunchAgents/com.user.tadoassistant.plist
+          ```
+   
+   **How it works**: The system uses a weather compensation curve to calculate optimal target temperatures based on 
+   outdoor conditions. The formula is: `target_temp = FLOW_TEMP_MAX - (FLOW_TEMP_CURVE_SLOPE × outdoor_temperature)`. 
+   For example, with default settings (max=75°C, slope=1.5), when it's 10°C outside, the target would be 60°C 
+   (75 - 1.5×10). The system checks and adjusts temperatures every 15 minutes when heating is active. By setting 
+   appropriate targets based on outdoor temperature, this encourages your heating system to operate more efficiently, 
+   helping to reduce energy consumption while maintaining comfort. The actual flow temperature in your boiler is 
+   controlled by the Tado system's internal logic based on these targets.
 
 Remember, Tado Assistant is designed to be hands-off. Once set up, it should require minimal interaction, letting you
 enjoy a comfortable home environment without any fuss.
