@@ -431,7 +431,7 @@ EOF
         systemctl enable --now "tado-api-proxy@${account_index}.service" 1>&2
     elif [[ "$OSTYPE" == "darwin"* ]] && command -v launchctl &> /dev/null; then
         setup_launchd_proxy_service "$account_index"
-    else
+    elif ! in_container; then
         local log_file="/var/log/tado-api-proxy-account${account_index}.log"
         mkdir -p "$(dirname "$log_file")"
         (
@@ -671,7 +671,14 @@ if [[ "$1" == "--update" ]] || [[ "$1" == "--force-update" ]]; then
     exit 0
 fi
 
-install_dependencies
-set_env_variables
-setup_service
+if ! in_container; then
+    # Native installation: full setup
+    install_dependencies
+    set_env_variables
+    setup_service
+else
+    # Container setup: only config, no installation or services
+    set_env_variables
+fi
+
 echo "Tado Assistant has been successfully installed and started!"
