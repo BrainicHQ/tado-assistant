@@ -7,7 +7,7 @@
 LOG_DIR=$(dirname "$LOG_FILE")
 mkdir -p "$LOG_DIR"
 
-declare -A OPEN_WINDOW_ACTIVATION_TIMES HOME_IDS API_BASE_URLS
+declare -A OPEN_WINDOW_ACTIVATION_TIMES HOME_IDS API_BASE_URLS LAST_FLOW_TEMP_ADJUSTMENT
 LAST_MESSAGE="" # Used to prevent duplicate messages
 
 # Reset the log file if it's older than 10 days
@@ -182,6 +182,134 @@ init_account() {
     fetch_home_id "$account_index"
 }
 
+optimize_flow_temperature() {
+    local account_index=$1
+    local home_id=${HOME_IDS[$account_index]}
+    local current_time=$(date +%s)
+    
+    # Check if flow temperature optimization is enabled
+    if [ "$ENABLE_FLOW_TEMP_OPTIMIZATION" != "true" ]; then
+        return 0
+    fi
+    
+    # Check if enough time has passed since last adjustment (minimum 15 minutes)
+    local min_adjustment_interval=900
+    if [ -n "${LAST_FLOW_TEMP_ADJUSTMENT[$account_index]}" ]; then
+        local last_adjustment=${LAST_FLOW_TEMP_ADJUSTMENT[$account_index]}
+        local time_since_last=$((current_time - last_adjustment))
+        if [ "$time_since_last" -lt "$min_adjustment_interval" ]; then
+            return 0
+        fi
+    fi
+    
+    ensure_proxy_running "$account_index"
+    
+    # Fetch outdoor temperature from weather data
+    local weather
+    weather=$(api_request "$account_index" GET "/api/v2/homes/$home_id/weather")
+    if ! handle_curl_error; then
+        return 1
+    fi
+    
+    local outdoor_temp=$(echo "$weather" | jq -r '.outsideTemperature.celsius // empty')
+    if [ -z "$outdoor_temp" ] || [ "$outdoor_temp" == "null" ]; then
+        log_message "⚠️ Account $account_index: Could not fetch outdoor temperature for flow temp optimization."
+        return 1
+    fi
+    
+    # Calculate optimal flow temperature using weather compensation curve
+    # Formula: flow_temp = max_temp - (slope * outdoor_temp)
+    # Default slope: 1.5 (steeper curve = more aggressive adjustment)
+    local slope="${FLOW_TEMP_CURVE_SLOPE:-1.5}"
+    local max_temp="${FLOW_TEMP_MAX:-75}"
+    local min_temp="${FLOW_TEMP_MIN:-35}"
+    
+    # Calculate target flow temperature
+    local target_flow_temp=$(awk -v max="$max_temp" -v slope="$slope" -v outdoor="$outdoor_temp" -v min="$min_temp" '
+        BEGIN {
+            result = max - (slope * outdoor)
+            if (result > max) result = max
+            if (result < min) result = min
+            printf "%.1f", result
+        }
+    ')
+    
+    # Fetch zones to find heating zones
+    local zones
+    zones=$(api_request "$account_index" GET "/api/v2/homes/$home_id/zones")
+    if ! handle_curl_error; then
+        return 1
+    fi
+    
+    # Check if zones is a valid array and not empty
+    if ! echo "$zones" | jq -e 'type == "array" and length > 0' >/dev/null 2>&1; then
+        return 0
+    fi
+    
+    # Process each heating zone
+    echo "$zones" | jq -c '.[]' | while read -r zone; do
+        local zone_id=$(echo "$zone" | jq -r '.id')
+        local zone_name=$(echo "$zone" | jq -r '.name')
+        local zone_type=$(echo "$zone" | jq -r '.type')
+        
+        # Only process HEATING zones
+        if [ "$zone_type" != "HEATING" ]; then
+            continue
+        fi
+        
+        # Get zone capabilities to check if flow temperature control is supported
+        local capabilities
+        capabilities=$(api_request "$account_index" GET "/api/v2/homes/$home_id/zones/$zone_id/capabilities")
+        if ! handle_curl_error; then
+            continue
+        fi
+        
+        # Check if zone supports flow temperature (this is available on some Tado systems)
+        local supports_flow_temp=$(echo "$capabilities" | jq -r '.temperatures?.celsius?.flowTemperature // empty')
+        
+        # Get current zone state
+        local zone_state
+        zone_state=$(api_request "$account_index" GET "/api/v2/homes/$home_id/zones/$zone_id/state")
+        if ! handle_curl_error; then
+            continue
+        fi
+        
+        # Check if heating is currently active
+        local heating_power=$(echo "$zone_state" | jq -r '.activityDataPoints.heatingPower.percentage // 0')
+        
+        # Only adjust if heating is active (> 0%)
+        if awk -v power="$heating_power" 'BEGIN {exit !(power > 0)}'; then
+            log_message "🌡️ Account $account_index: $zone_name: Outdoor temp: ${outdoor_temp}°C, Target flow temp: ${target_flow_temp}°C"
+            
+            # Set overlay with optimized flow temperature
+            # Note: Not all Tado systems support flow temperature control via API
+            # This will attempt to set it, but may not work on all systems
+            local overlay_data=$(jq -n \
+                --arg temp "$target_flow_temp" \
+                '{
+                    "setting": {
+                        "type": "HEATING",
+                        "power": "ON",
+                        "temperature": {
+                            "celsius": ($temp | tonumber)
+                        }
+                    },
+                    "termination": {
+                        "type": "TADO_MODE"
+                    }
+                }')
+            
+            # Apply overlay (this sets the temperature, flow temp control depends on system capabilities)
+            local overlay_response
+            overlay_response=$(api_request "$account_index" PUT "/api/v2/homes/$home_id/zones/$zone_id/overlay" "$overlay_data")
+            if handle_curl_error; then
+                log_message "✅ Account $account_index: $zone_name: Applied optimized heating settings."
+                LAST_FLOW_TEMP_ADJUSTMENT[$account_index]=$current_time
+            fi
+        fi
+    done
+}
+
 homeState() {
     local account_index=$1
     local home_id=${HOME_IDS[$account_index]}
@@ -283,6 +411,9 @@ homeState() {
         done
     fi
 
+    # Optimize flow temperature if enabled
+    optimize_flow_temperature "$account_index"
+
         log_message "⏳ Account $account_index: Waiting for a change in devices location or for an open window.."
     }
 
@@ -294,6 +425,10 @@ for (( i=1; i<=NUM_ACCOUNTS; i++ )); do
     ENABLE_LOG_VAR="ENABLE_LOG_$i"
     LOG_FILE_VAR="LOG_FILE_$i"
     API_BASE_URL_VAR="TADO_API_BASE_URL_$i"
+    ENABLE_FLOW_TEMP_OPTIMIZATION_VAR="ENABLE_FLOW_TEMP_OPTIMIZATION_$i"
+    FLOW_TEMP_MIN_VAR="FLOW_TEMP_MIN_$i"
+    FLOW_TEMP_MAX_VAR="FLOW_TEMP_MAX_$i"
+    FLOW_TEMP_CURVE_SLOPE_VAR="FLOW_TEMP_CURVE_SLOPE_$i"
 
     # Fetch dynamic variables
     CHECKING_INTERVAL=${!CHECKING_INTERVAL_VAR:-15}
@@ -302,6 +437,10 @@ for (( i=1; i<=NUM_ACCOUNTS; i++ )); do
     ENABLE_LOG=${!ENABLE_LOG_VAR:-false}
     LOG_FILE=${!LOG_FILE_VAR:-'/var/log/tado-assistant.log'}
     API_BASE_URL=${!API_BASE_URL_VAR:-${TADO_API_BASE_URL:-"http://localhost:8080"}}
+    ENABLE_FLOW_TEMP_OPTIMIZATION=${!ENABLE_FLOW_TEMP_OPTIMIZATION_VAR:-false}
+    FLOW_TEMP_MIN=${!FLOW_TEMP_MIN_VAR:-35}
+    FLOW_TEMP_MAX=${!FLOW_TEMP_MAX_VAR:-75}
+    FLOW_TEMP_CURVE_SLOPE=${!FLOW_TEMP_CURVE_SLOPE_VAR:-1.5}
     API_BASE_URL=$(normalize_base_url "$API_BASE_URL")
     API_BASE_URLS[$i]="$API_BASE_URL"
 
