@@ -1,3 +1,5 @@
+> ⚠️ **Archive notice (proxy risk)**: This repository is no longer actively maintained. Reports in [issue #34](https://github.com/BrainicHQ/tado-assistant/issues/34) indicate that using the bundled tado-api-proxy can trigger Tado rate limiting (HTTP 429) and account bans/whitelisting, breaking geofencing. Use at your own risk.
+
 # 🏡 Tado Assistant: Your User-Friendly, Free Tado Auto-Assist Alternative
 
 Discover the ultimate free alternative to Tado's Auto-Assist with Tado Assistant! This innovative utility enhances your
